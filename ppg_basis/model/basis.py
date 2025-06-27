@@ -1,6 +1,7 @@
 import numpy as np
 from numba import njit
 from scipy.stats import gamma, norm
+from scipy.optimize import LinearConstraint
 
 def basis_function(theta_diff: float, basis_type: str, params):
     """
@@ -34,7 +35,7 @@ def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type_code)
     :param point: coordinate
     :param rr: peak-to-peak array
     :param fs: sampling rate
-    :param thetai: phase location in PPG period
+    :param thetai: vector of phase locations for each basis in PPG
     :param basis_params: parameters for basis function
     :param basis_type_code: target basis
     :return: coordinate values calculated using basis & params
@@ -131,3 +132,70 @@ def unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params)
     z -= np.mean(z)
     z = (z - np.min(z)) / (np.max(z) - np.min(z) + 1e-8)
     return z
+
+def generate_basis_parameters(L, basis_type, random_state=None):
+    """
+    Randomly generate parameters given a basis function
+    :param L: number of basis functions
+    :param basis_type: basis function
+    :param random_state: initialization protocol for random state
+    :return: basis parameter list
+    """
+    rng = np.random.default_rng(random_state)
+    thetai = np.sort(rng.uniform(-np.pi, np.pi, L))
+    params = []
+
+    for _ in range(L):
+        if basis_type == 'gaussian':
+            a = rng.uniform(0.1, 1.0)
+            b = rng.uniform(0.1, 3.0)
+            params.append([a, b])
+        elif basis_type == 'gamma':
+            a = rng.uniform(0.1, 1.0)
+            alpha = rng.uniform(1.0, 5.0)
+            scale = rng.uniform(0.1, 1.0)
+            params.append([a, alpha, scale])
+        elif basis_type == 'skewed-gaussian':
+            a = rng.uniform(0.1, 1.0)
+            b = rng.uniform(0.1, 1.0)
+            skew = rng.uniform(-5, 5)
+            params.append([a, b, skew])
+        else:
+            raise ValueError(f"Unsupported basis type: {basis_type}")
+
+    return thetai, np.array(params)
+
+def get_bounds_and_constraints(L, basis_type):
+    """
+    Generate bounds and constraints for optimization
+    :param L: number of basis functions
+    :param basis_type: basis function
+    :return: bounds and constraints
+    """
+    bounds = []
+    for _ in range(L):
+        if basis_type == 'gaussian':
+            bounds.extend([(0.0, 1.0), (-np.pi, np.pi), (0.05, 3.0)])
+        elif basis_type == 'gamma':
+            bounds.extend([(0.0, 1.0), (1.0, 6.0), (0.05, 3.0), (-np.pi, np.pi)])
+        elif basis_type == 'skewed-gaussian':
+            bounds.extend([(0.0, 1.0), (-np.pi, np.pi), (0.05, 3.0), (-10, 10)])
+
+    # Sort theta constraints: enforce ascending order of theta_i
+    A = []
+    for i in range(L - 1):
+        row = [0] * (L * (len(bounds) // L))
+        ti_idx_1 = i * (len(bounds) // L) + 1
+        ti_idx_2 = (i + 1) * (len(bounds) // L) + 1
+        row[ti_idx_1] = 1
+        row[ti_idx_2] = -1
+        A.append(row)
+
+    if A:
+        A = np.array(A)
+        lb = [-np.inf] * len(A)
+        ub = [0.0] * len(A)
+        constraint = LinearConstraint(A, lb, ub)
+        return bounds, constraint
+    else:
+        return bounds, None

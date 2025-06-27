@@ -1,0 +1,194 @@
+1.) Confirm basis functions are written properly
+2.) add type suggestions to function declarations, confirm function descriptions are correct
+3.) Is there a way to consolidate rr and pp?
+
+@njit
+def _objective_function(model, signal, mse_flag: bool=True, corr_flag: bool=True, appg_flag: bool=True):
+    if mse_flag:
+        mse = np.sum((model - signal) ** 2)/len(model)
+    else:
+        mse = 0
+
+    if corr_flag:
+        corr = 1 - corrcoef_numba(model, signal)
+    else:
+        corr = 0
+
+    if appg_flag:
+        sig_smooth = gaussian_filter1d_numba(signal, sigma=2)
+        dsig = gradient_1d(sig_smooth, 1/125)
+        d2sig = gradient_1d(dsig, 1/125)
+        mod_smooth = gaussian_filter1d_numba(model, sigma=2)
+        dmod = gradient_1d(mod_smooth, 1/125)
+        d2mod = gradient_1d(dmod, 1/125)
+
+
+        appg = 1-np.sqrt(np.sum((d2mod - d2sig)**2)/np.sum((d2sig-np.mean(d2sig))**2))
+    else:
+        appg = 0
+    return mse + corr + appg
+
+    def get_opt_para_minimize(signal,
+                          fs,
+                          true_params=(0.9482, -1.6184, 0.9353,
+                                       0.1444,  0.9903,  1.9499),
+                          coord_cycles=4,
+                          hr=60,
+                          sigma=0):
+    """
+    Phase 1: DE → SLSQP on all six (MSE + corr + APPG)
+    Phase 2: coordinate‐descent alternating (MSE only)
+    """
+    # unpack
+    a0_gt, t0_gt, b0_gt, a1_gt, t1_gt, b1_gt = true_params
+
+    # build a ppinterval exactly as your original
+    rrinterval = len(signal)/fs
+    ppinterval = _getRandomNormalPPInterval(time=rrinterval,
+                                            mu=60/hr,
+                                            sigma=sigma)
+
+    # — Phase 1 objective (MSE + corr + APPG) —
+    def obj_phase1(x):
+        ai   = np.array([x[0], x[3]])
+        thet = np.array([x[1], x[4]])
+        bi   = np.array([x[2], x[5]])
+        m    = _model_numba(ppinterval, thet, ai, bi, fs, rrinterval)
+        return _objective_function(m, signal,
+                                   mse_flag=True,
+                                   corr_flag=True,
+                                   appg_flag=False)
+
+    # bounds for all six
+    bounds6 = [
+        (0.0,    1.0),       # a0
+        (-np.pi, np.pi),     # t0
+        (0.0,    3.0),       # b0
+        (0.0,    1.0),       # a1
+        (-np.pi, np.pi),     # t1
+        (0.0,    3.0)        # b1
+    ]
+
+    #   x = [ a0,   t0,   b0,   a1,   t1,   b1 ]
+    A = np.array([
+        [-1,  0, 0,  1,  0,  0],  #  a1 − a0 ≤ 0  →  −a0 + a1 ≤ 0
+        [ 0,  1, 0,  0, -1,  0],  #  t0 − t1 ≤ 0  →   t0 − t1 ≤ 0
+    ])
+
+    lb = [-np.inf, -np.inf]
+    ub = [0.0,      np.pi/4]
+
+    lc = LinearConstraint(A, lb, ub)
+
+    # 1A) coarse global search
+    de_res = differential_evolution(obj_phase1,
+                                    bounds6,
+                                    constraints=(lc,),
+                                    maxiter=60,
+                                    popsize=12,
+                                    tol=1e-2,
+                                    polish=False)
+
+    # 1B) local refine with SLSQP
+    cons = [
+    # enforce a1 <= a0  ⇒  a0 - a1 >= 0
+    {'type': 'ineq', 'fun': lambda x: x[0] - x[3]},
+    # enforce t1 >= t0  ⇒  t1 - t0 >= 0
+    {'type': 'ineq', 'fun': lambda x: x[4] - x[1] - np.pi/4}
+]
+    sls1 = minimize(obj_phase1,
+                    de_res.x,
+                    bounds=bounds6,
+                    constraints=cons,
+                    method='SLSQP',
+                    options={'maxiter':1000, 'ftol':1e-8})
+    x1 = sls1.x.copy()
+
+    # compute model after Phase 1
+    model1 = _model_numba(ppinterval,
+                          np.array([x1[1], x1[4]]),
+                          np.array([x1[0], x1[3]]),
+                          np.array([x1[2], x1[5]]),
+                          fs, rrinterval)
+
+    # — Phase 2: coordinate‐descent (MSE only) —
+    x_cd = x1.copy()
+    boundsA = bounds6[:3]
+    boundsB = bounds6[3:]
+
+    def obj_mse_block(x_sub, block):
+        """block=0 for (a0,t0,b0), block=1 for (a1,t1,b1)"""
+        x_full = x_cd.copy()
+        if block == 0:
+            x_full[0:3] = x_sub
+        else:
+            x_full[3:6] = x_sub
+
+        ai   = np.array([x_full[0], x_full[3]])
+        ti = np.array([x_full[1], x_full[4]])
+        bi   = np.array([x_full[2], x_full[5]])
+        m    = _model_numba(ppinterval, ti, ai, bi, fs, rrinterval)
+        return _objective_function(m, signal,
+                                   mse_flag=True,
+                                   corr_flag=False,
+                                   appg_flag=False)
+
+    # alternate
+    for _ in range(coord_cycles):
+        # block A = (a0,t0,b0)
+        resA = minimize(lambda xa: obj_mse_block(xa,0),
+                        x_cd[0:3],
+                        bounds=boundsA,
+                        method='SLSQP',
+                        options={'maxiter':500,'ftol':1e-6})
+        x_cd[0:3] = resA.x
+
+        # block B = (a1,t1,b1)
+        resB = minimize(lambda xb: obj_mse_block(xb,1),
+                        x_cd[3:6],
+                        bounds=boundsB,
+                        method='SLSQP',
+                        options={'maxiter':500,'ftol':1e-6})
+        x_cd[3:6] = resB.x
+
+    # compute model after Phase 2
+    model2 = _model_numba(ppinterval,
+                          np.array([x_cd[1], x_cd[4]]),
+                          np.array([x_cd[0], x_cd[3]]),
+                          np.array([x_cd[2], x_cd[5]]),
+                          fs, rrinterval)
+
+    # — Plot everything —
+    t_axis = np.linspace(0, rrinterval, signal.size)
+    plt.figure(figsize=(9,4))
+    plt.plot(t_axis, signal,   label="Ground Truth", linewidth=2)
+    plt.plot(t_axis, model1,   label="Phase 1 (DE→SLSQP)", alpha=0.8)
+    plt.plot(t_axis, model2,   label=f"Phase 2 (coord-descent ×{coord_cycles})",
+             linestyle="--", alpha=0.9)
+    plt.xlabel("Time (s)")
+    plt.ylabel("Normalized amplitude")
+    plt.title("PPG Reconstruction: Phase 1 & Phase 2")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+    return {
+        'a0': x_cd[0], 't0': x_cd[1], 'b0': x_cd[2],
+        'a1': x_cd[3], 't1': x_cd[4], 'b1': x_cd[5],
+    }
+
+    fs       = 125
+duration = 10.0
+hr = 60
+sigma = 0
+# ground‐truth signal
+ppinterval = np.ones(int(duration*1))*(60/60)
+true_p = (0.9482, -1.6184, 0.9353, 0.1444, 0.9903, 1.9499)
+signal = _model_numba(ppinterval,
+                      np.array([true_p[1], true_p[4]]),
+                      np.array([true_p[0], true_p[3]]),
+                      np.array([true_p[2], true_p[5]]),
+                      fs, duration)
+
+optimized = get_opt_para_minimize(signal=signal, fs=fs, hr=hr, sigma=sigma, coord_cycles=4)
+print("Final parameters:", optimized)
