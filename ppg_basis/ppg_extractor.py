@@ -8,7 +8,7 @@ from typing import Callable
 
 class ppgExtractor():
     def __init__(self, signal, fs, hr, sigma, L, basis_type):
-        self.signal, self.fs, mu, validated_sigma, validated_L, self.basis_type = ppgExtractor._validateParams(
+        self.signal, self.fs, mu, validated_sigma, validated_L, self.basis_type = ppgExtractor._validate_params(
             signal, 
             fs, 
             hr, 
@@ -26,14 +26,14 @@ class ppgExtractor():
                                                                    basis_type=basis_type)
         
     @staticmethod
-    def _validateParams(signal, fs, hr, sigma, L, basis_type):
+    def _validate_params(signal, fs, hr, sigma, L, basis_type):
         return [
-            ppgExtractor._validate(signal, lambda x : x != None and len(x) != 3, "signal"), # NOTE: No default value here throws ValueError in _validate
+            ppgExtractor._validate(signal, lambda x : x != None and len(x) == 3 or len(x) == 2, "signal"), # NOTE: No default value here throws ValueError in _validate
             ppgExtractor._validate(fs, lambda x: x > 0, "fs", 60),
             60 / ppgExtractor._validate(hr, lambda x: x > 0, "hr", 60),
             ppgExtractor._validate(sigma, lambda x: x > 0, "sigma", 0),
-            ppgExtractor._validate(L, lambda x: x > 1, "L", 2), # NOTE: set default number of basis functions to 2
-            ppgExtractor._validate(basis_type, lambda x: x in ['gaussian', 'gamma', 'skewed-gaussian'], 'basis_type', 'gaussian') # NOTE: set default basis type to gaussian
+            ppgExtractor._validate(L, lambda x: x > 1, "L", 2),
+            ppgExtractor._validate(basis_type, lambda x: x in ['gaussian', 'gamma', 'skewed-gaussian'], 'basis_type', 'gaussian')
         ]
     
     @staticmethod
