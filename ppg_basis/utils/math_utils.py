@@ -1,5 +1,6 @@
 import numpy as np
 from numba import njit, prange
+import math
 
 @njit
 def corrcoef_numba(x, y):
@@ -72,3 +73,20 @@ def gradient_1d(arr, dx=1.0):
     grad[0] = (arr[1] - arr[0]) / dx
     grad[-1] = (arr[-1] - arr[-2]) / dx
     return grad
+
+@njit
+def gamma_pdf(x, alpha, scale):
+    if x < 0.0:
+        return 0.0
+    return math.exp((alpha - 1.0)*math.log(x)
+                    - x/scale
+                    - math.lgamma(alpha)
+                    - alpha*math.log(scale))
+
+@njit
+def norm_pdf(x, b):
+    return math.exp(-0.5*(x/b)**2) / (math.sqrt(2*math.pi) * b)
+
+@njit
+def norm_cdf(x):
+    return 0.5 * (1.0 + math.erf(x/math.sqrt(2.0)))

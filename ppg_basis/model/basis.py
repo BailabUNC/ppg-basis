@@ -1,6 +1,6 @@
 import numpy as np
 from numba import njit
-from scipy.stats import gamma, norm
+from ppg_basis.utils.math_utils import *
 from scipy.optimize import LinearConstraint
 
 def basis_function(theta_diff: float, basis_type: str, params):
@@ -17,12 +17,12 @@ def basis_function(theta_diff: float, basis_type: str, params):
     elif basis_type == 'gamma':
         a, alpha, scale = params
         x = theta_diff + np.pi  # shift domain to positive for gamma
-        return a * gamma.pdf(x, a=alpha, scale=scale)
+        return a * gamma_pdf(x=x, alpha=alpha, scale=scale)
     elif basis_type == 'skewed-gaussian':
         a, b, skew = params
         x = theta_diff
-        norm_part = norm.pdf(x / b)
-        cdf_part = norm.cdf(skew * x / b)
+        norm_part = norm_pdf(x, b)
+        cdf_part = norm_cdf(skew * x / b)
         return 2 * a * x * norm_part * cdf_part
     else:
         raise ValueError(f"Unsupported basis type: {basis_type}")
@@ -59,13 +59,35 @@ def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type_code)
         elif basis_type_code == 1:  # Gamma
             a, alpha, scale = basis_params[i, 0], basis_params[i, 1], basis_params[i, 2]
             xval = diff_theta + np.pi
-            dzdt -= a * gamma.pdf(xval, a=alpha, scale=scale) * w
+            f = gamma_pdf(x=xval, alpha=alpha, scale=scale)
+            # Zero-mean basis
+            M = 200
+            d0 = 2*math.pi/M
+            mean_f = 0.0
+            for j in range(M):
+                j0 = -math.pi + (j+0.5)*d0
+                j0 += math.pi
+                mean_f += gamma_pdf(x=j0, alpha=alpha, scale=scale)
+            mean_f = mean_f * d0 / (2*math.pi)
+            f = a * (f - mean_f)
+
+            dzdt -= f * w
 
         elif basis_type_code == 2:  # Skewed Gaussian
             a, b, skew = basis_params[i, 0], basis_params[i, 1], basis_params[i, 2]
-            norm_val = np.exp(-0.5 * (diff_theta / b)**2) / (np.sqrt(2*np.pi) * b)
-            cdf_val = 0.5 * (1 + np.erf(skew * diff_theta / (b * np.sqrt(2))))
-            dzdt -= 2 * a * diff_theta * norm_val * cdf_val * w
+            norm_val = norm_pdf(diff_theta, b)
+            cdf_val = norm_cdf(skew * diff_theta / b)
+            f = 2 * a * diff_theta * norm_val * cdf_val
+            # Zero-mean basis
+            M = 200
+            d0 = 2*math.pi/M
+            mean_f = 0.0
+            for j in range(M):
+                j0 = -math.pi + (j+0.5)*d0
+                mean_f += 2 * a * j0 * norm_pdf(j0,b) * norm_cdf(skew*j0/b)
+            mean_f = mean_f * d0 /(2*math.pi)
+            f -= mean_f
+            dzdt -= f*w
 
     return np.array([dxdt, dydt, dzdt])
 
