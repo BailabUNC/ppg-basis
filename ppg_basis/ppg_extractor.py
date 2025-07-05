@@ -1,24 +1,49 @@
+import warnings
 import numpy as np
 from scipy.optimize import differential_evolution, minimize
 from ppg_basis.utils.generator_utils import pp_interval_generator
 from ppg_basis.model import *
 from ppg_basis.cost import *
+from typing import Callable
 
 class ppgExtractor():
     def __init__(self, signal, fs, hr, sigma, L, basis_type):
-        self.signal = signal
-        self.fs = fs
-        self.basis_type=basis_type
+        self.signal, self.fs, mu, validated_sigma, validated_L, self.basis_type = ppgExtractor._validate_params(
+            signal, 
+            fs, 
+            hr, 
+            sigma, 
+            L, 
+            basis_type)
         self.rr_interval = len(signal)/fs
         self.pp_interval = pp_interval_generator(time=self.rr_interval,
-                                                 mu=60/hr,
-                                                 sigma=sigma)
-        self.thetai, self.params = generate_basis_parameters(L=L,
+                                                 mu=mu,
+                                                 sigma=validated_sigma)
+        self.thetai, self.params = generate_basis_parameters(L=validated_L,
                                                              basis_type=basis_type,
                                                              random_state=None)
-        self.bounds, self.constraints = get_bounds_and_constraints(L=L,
+        self.bounds, self.constraints = get_bounds_and_constraints(L=validated_L,
                                                                    basis_type=basis_type)
-        # TODO: Input checker should happen here
+        
+    @staticmethod
+    def _validate_params(signal, fs, hr, sigma, L, basis_type):
+        return [
+            ppgExtractor._validate(signal, lambda x : x != None and len(x) == 3 or len(x) == 2, "signal"), # NOTE: No default value here throws ValueError in _validate
+            ppgExtractor._validate(fs, lambda x: x > 0, "fs", 60),
+            60 / ppgExtractor._validate(hr, lambda x: x > 0, "hr", 60),
+            ppgExtractor._validate(sigma, lambda x: x > 0, "sigma", 0),
+            ppgExtractor._validate(L, lambda x: x > 1, "L", 2),
+            ppgExtractor._validate(basis_type, lambda x: x in ['gaussian', 'gamma', 'skewed-gaussian'], 'basis_type', 'gaussian')
+        ]
+    
+    @staticmethod
+    def _validate(value: any, constraint: Callable, name: str, default: any = None):
+        if constraint(value):
+            return value
+        if default is None:
+            raise ValueError("Invalid argument for value {name}: {value} and no default available")
+        warnings.warn(f'{name} parameter is invalid ({value}), defaulting to {default}', UserWarning)
+        return default
 
     def get_cost(self, mse_flag: bool=True, corr_flag: bool=True, appg_flag: bool=False):
         model = unified_model_ode(ppinterval=self.pp_interval,
