@@ -11,7 +11,7 @@ class ppgGenerator():
         self.L = L
         self.basis_type = basis_type
 
-        if thetas or params is None:
+        if thetas is None or params is None:
             self.thetai, self.params = model.generate_basis_parameters(L=self.L,
                                                                        basis_type=self.basis_type)
         else:

@@ -188,36 +188,45 @@ def generate_basis_parameters(L, basis_type, random_state=None):
     return thetai, np.array(params)
 
 def get_bounds_and_constraints(L, basis_type):
-    """
-    Generate bounds and constraints for optimization
-    :param L: number of basis functions
-    :param basis_type: basis function
-    :return: bounds and constraints
-    """
-    bounds = []
-    for _ in range(L):
+        """
+        Generate bounds and constraints for optimization
+        :param L: number of basis functions
+        :param basis_type: basis function
+        :return: bounds and constraints
+        """
+        # 1) Theta bounds
+        theta_bounds = [(-np.pi, np.pi)] * L
+
+        # 2) Parameter bounds by basis type
         if basis_type == 'gaussian':
-            bounds.extend([(0.0, 1.0), (-np.pi, np.pi), (0.05, 3.0)])
+            # each basis has (a, b)
+            param_bnds = [(0.0, 1.0), (0.05, 3.0)]
         elif basis_type == 'gamma':
-            bounds.extend([(0.0, 1.0), (1.0, 6.0), (0.05, 3.0), (-np.pi, np.pi)])
+            # each basis has (a, alpha, scale)
+            param_bnds = [(0.0, 1.0), (1.0, 6.0), (0.05, 3.0)]
         elif basis_type == 'skewed-gaussian':
-            bounds.extend([(0.0, 1.0), (-np.pi, np.pi), (0.05, 3.0), (-10, 10)])
+            # each basis has (a, b, skew)
+            param_bnds = [(0.0, 1.0), (0.05, 3.0), (-10.0, 10.0)]
+        else:
+            raise ValueError(f"Unsupported basis type: {basis_type}")
 
-    # Sort theta constraints: enforce ascending order of theta_i
-    A = []
-    for i in range(L - 1):
-        row = [0] * (L * (len(bounds) // L))
-        ti_idx_1 = i * (len(bounds) // L) + 1
-        ti_idx_2 = (i + 1) * (len(bounds) // L) + 1
-        row[ti_idx_1] = 1
-        row[ti_idx_2] = -1
-        A.append(row)
+        # replicate for L bases
+        param_bounds = param_bnds * L
 
-    if A:
-        A = np.array(A)
-        lb = [-np.inf] * len(A)
-        ub = [0.0] * len(A)
-        constraint = LinearConstraint(A, lb, ub)
+        # combine into one list: [θ-bounds…, param-bounds…]
+        bounds = theta_bounds + param_bounds
+
+        # 3) Build θ-ordering constraint
+        if L > 1:
+            n = len(bounds)
+            A = np.zeros((L - 1, n))
+            for i in range(L - 1):
+                A[i, i] = 1  # θ_i
+                A[i, i + 1] = -1  # θ_{i+1}
+            lb = -np.inf * np.ones(L - 1)
+            ub = 0 * np.ones(L - 1)
+            constraint = LinearConstraint(A, lb, ub)
+        else:
+            constraint = None
+
         return bounds, constraint
-    else:
-        return bounds, None
