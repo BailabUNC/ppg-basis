@@ -2,6 +2,7 @@ import numpy as np
 from numba import njit
 from ppg_basis.utils.math_utils import *
 from scipy.optimize import LinearConstraint
+from scipy.signal import detrend
 
 def basis_function(theta_diff: float, basis_type: str, params):
     """
@@ -28,7 +29,18 @@ def basis_function(theta_diff: float, basis_type: str, params):
         raise ValueError(f"Unsupported basis type: {basis_type}")
 
 @njit
-def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type_code):
+def precompute_mean_basis_values(basis_params, basis_type_code, M):
+    L = basis_params.shape[0]
+    mean_vals = np.zeros(L)
+    for i in range(L):
+        if basis_type_code == 1:
+            mean_vals[i] = gamma_mean(basis_params[i, 1], basis_params[i, 2], M)
+        elif basis_type_code == 2:
+            mean_vals[i] = skewed_gaussian_mean(basis_params[i, 1], basis_params[i, 2], M)
+    return mean_vals
+
+@njit
+def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type_code, mean_vals):
     """
     Generate value for given point in PPG using specified basis function
     :param t: time
@@ -50,49 +62,28 @@ def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type_code)
 
     for i in range(len(thetai)):
         diff_theta = ((theta - thetai[i] + np.pi) % (2 * np.pi)) - np.pi
-
-        if basis_type_code == 0:  # Gaussian
+        if basis_type_code == 0:
             a, b = basis_params[i, 0], basis_params[i, 1]
             b_sq = max(b ** 2, 1e-6)
-            dzdt -= a * diff_theta * np.exp(-(diff_theta ** 2) / (2 * b_sq)) * w
-
-        elif basis_type_code == 1:  # Gamma
+            f = a * diff_theta * np.exp(-(diff_theta ** 2) / (2 * b_sq))
+            dzdt -= f * w
+        elif basis_type_code == 1:
             a, alpha, scale = basis_params[i, 0], basis_params[i, 1], basis_params[i, 2]
             xval = diff_theta + np.pi
-            f = gamma_pdf(x=xval, alpha=alpha, scale=scale)
-            # Zero-mean basis
-            M = 200
-            d0 = 2*math.pi/M
-            mean_f = 0.0
-            for j in range(M):
-                j0 = -math.pi + (j+0.5)*d0
-                j0 += math.pi
-                mean_f += gamma_pdf(x=j0, alpha=alpha, scale=scale)
-            mean_f = mean_f * d0 / (2*math.pi)
-            f = a * (f - mean_f)
-
+            f = a * (gamma_pdf(xval, alpha, scale) - mean_vals[i])
             dzdt -= f * w
-
-        elif basis_type_code == 2:  # Skewed Gaussian
+        elif basis_type_code == 2:
             a, b, skew = basis_params[i, 0], basis_params[i, 1], basis_params[i, 2]
             norm_val = norm_pdf(diff_theta, b)
             cdf_val = norm_cdf(skew * diff_theta / b)
             f = 2 * a * diff_theta * norm_val * cdf_val
-            # Zero-mean basis
-            M = 200
-            d0 = 2*math.pi/M
-            mean_f = 0.0
-            for j in range(M):
-                j0 = -math.pi + (j+0.5)*d0
-                mean_f += 2 * a * j0 * norm_pdf(j0,b) * norm_cdf(skew*j0/b)
-            mean_f = mean_f * d0 /(2*math.pi)
-            f -= mean_f
-            dzdt -= f*w
+            f-= mean_vals[i]
+            dzdt -= f * w
 
     return np.array([dxdt, dydt, dzdt])
 
 @njit
-def rk4_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type_code):
+def rk4_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type_code, mean_vals):
     """
     ODE solver using RK method
     :param y0: initial value
@@ -104,15 +95,16 @@ def rk4_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type_code):
     :param basis_type_code: target basis
     :return: vector of coordinate values
     """
+    n = len(tspan)
     dt = tspan[1] - tspan[0]
     y = np.zeros((len(tspan), 3))
     y[0] = y0
-    for i in range(1, len(tspan)):
+    for i in range(1, n):
         t = tspan[i - 1]
-        k1 = generator_equations(t, y[i - 1], rr, fs, thetai, basis_params, basis_type_code)
-        k2 = generator_equations(t + dt / 2, y[i - 1] + dt * k1 / 2, rr, fs, thetai, basis_params, basis_type_code)
-        k3 = generator_equations(t + dt / 2, y[i - 1] + dt * k2 / 2, rr, fs, thetai, basis_params, basis_type_code)
-        k4 = generator_equations(t + dt, y[i - 1] + dt * k3, rr, fs, thetai, basis_params, basis_type_code)
+        k1 = generator_equations(t, y[i - 1], rr, fs, thetai, basis_params, basis_type_code, mean_vals)
+        k2 = generator_equations(t + dt / 2, y[i - 1] + dt * k1 / 2, rr, fs, thetai, basis_params, basis_type_code, mean_vals)
+        k3 = generator_equations(t + dt / 2, y[i - 1] + dt * k2 / 2, rr, fs, thetai, basis_params, basis_type_code, mean_vals)
+        k4 = generator_equations(t + dt, y[i - 1] + dt * k3, rr, fs, thetai, basis_params, basis_type_code, mean_vals)
         y[i] = y[i - 1] + (dt / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
     return y
 
@@ -149,8 +141,10 @@ def unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params)
     basis_type_map = {'gaussian': 0, 'gamma': 1, 'skewed-gaussian': 2}
     basis_type_code = basis_type_map[basis_type]
 
-    traj = rk4_integration(y0, tspan, rr, fs, thetai, np.array(basis_params), basis_type_code)
+    mean_vals = precompute_mean_basis_values(np.array(basis_params), basis_type_code, M=200)
+    traj = rk4_integration(y0, tspan, rr, fs, thetai, np.array(basis_params), basis_type_code, mean_vals)
     z = traj[:, 2]
+    z = detrend(z)
     z -= np.mean(z)
     z = (z - np.min(z)) / (np.max(z) - np.min(z) + 1e-8)
     return z
