@@ -7,6 +7,18 @@ from ppg_basis.cost import objective_function
 class ppgExtractor:
     def __init__(self, signal: np.ndarray, fs: float, hr: float, sigma: float, L: int,
                  basis_type: str, mse_flag: bool = True, corr_flag: bool = True, appg_flag: bool = False):
+        """
+        Constructor for Extractor Class
+        :param signal: Input signal to analyze
+        :param fs: sampling rate (Hz)
+        :param hr: Heart Rate (BPM)
+        :param sigma: Standard Deviation in HR
+        :param L: Number of Basis Functions
+        :param basis_type: Basis function (gaussian, gamma, or skewed-gaussian)
+        :param mse_flag: Cost includes mean-squared-error
+        :param corr_flag: Cost includes (1-corr)
+        :param appg_flag: Cost includes normalized root-mean-square error of second derivative of PPG
+        """
         self.signal = signal
         self.fs = fs
         self.basis_type = basis_type
@@ -57,11 +69,17 @@ class ppgExtractor:
                                  corr_flag=self.corr_flag,
                                  appg_flag=self.appg_flag)
 
-    def extract_ppg(self):
+    def extract_ppg(self, block_update: bool = True, coord_cycles: int = 4):
+        """
+        Extract PPG params (theta and basis specific)
+        :param block_update: Flag for whether to run block update per basis in phase 2 optimization
+        :param coord_cycles: If block update flag is True, dictates how many cycles per basis
+        :return: thetas and params from phase 2 optimization
+        """
         # flatten the initial guess
         P = self.params.shape[1]
         x0 = np.concatenate([self.thetai, self.params.flatten()])
-        # Differential Evolutionx0 = self.params.flatten()
+        # Differential Evolution
         de_res = differential_evolution(func=self.get_cost,
                                         bounds=self.bounds,
                                         maxiter=60,
@@ -78,7 +96,48 @@ class ppgExtractor:
                            options={'maxiter': 1000, 'ftol': 1e-8})
 
         # reshape optimized params back to (L, P)
-        x_opt = sls_res.x
-        theta_opt = x_opt[:self.L]
-        params_opt = x_opt[self.L:].reshape((self.L, P))
-        return theta_opt, params_opt
+        x_phase1 = sls_res.x
+        theta_phase1 = x_phase1[:self.L]
+        params_phase1 = x_phase1[self.L:].reshape((self.L, P))
+
+        theta_phase2 = theta_phase1.copy()
+        params_phase2 = params_phase1.copy()
+        if block_update:
+            for _ in range(coord_cycles):
+                for i in range(self.L):
+                    xi0 = np.concatenate([[theta_phase2[i]], params_phase2[i]])
+
+                    # Define cost for the i-th block, keeping others fixed
+                    def block_cost(xi):
+                        thetas = theta_phase2.copy()
+                        params = params_phase2.copy()
+                        thetas[i] = xi[0]
+                        params[i] = xi[1:]
+                        x_full = np.concatenate([thetas, params.flatten()])
+                        return self.get_cost(x_full)
+
+                    # Define bounds for i-th block
+                    block_bounds = [self.bounds[i]] + self.bounds[self.L + i * P: self.L + (i + 1) * P]
+
+                    # Local optimize for block
+                    res = minimize(
+                        fun=block_cost,
+                        x0=xi0,
+                        bounds=block_bounds,
+                        method='SLSQP',
+                        options={'maxiter': 300, 'ftol': 1e-6}
+                    )
+
+                    # Update parameters
+                    theta_phase2[i] = res.x[0]
+                    params_phase2[i] = res.x[1:]
+        else:
+            res = minimize(fun=self.get_cost,
+                           x0=x_phase1,
+                           bounds=self.bounds,
+                           constraints=self.constraints,
+                           method='SLSQP',
+                           options={'maxiter': 1000, 'ftol': 1e-8})
+            theta_phase2 = res.x[:self.L]
+            params_phase2 = res.x[self.L:].reshape((self.L, P))
+        return theta_phase2, params_phase2
