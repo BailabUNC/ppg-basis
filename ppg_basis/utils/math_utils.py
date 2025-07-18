@@ -90,3 +90,21 @@ def norm_pdf(x, b):
 @njit
 def norm_cdf(x):
     return 0.5 * (1.0 + math.erf(x/math.sqrt(2.0)))
+
+@njit
+def gamma_mean(alpha, scale, M):
+    d0 = 2 * np.pi / M
+    mean_val = 0.0
+    for j in range(M):
+        j0 = (j + 0.5) * d0
+        mean_val += gamma_pdf(j0, alpha, scale)
+    return mean_val * d0 / (2 * np.pi)
+
+@njit
+def skewed_gaussian_mean(b, skew, M):
+    d0 = 2 * np.pi / M
+    mean_val = 0.0
+    for j in range(M):
+        j0 = -np.pi + (j + 0.5) * d0
+        mean_val += 2 * j0 * norm_pdf(j0, b) * norm_cdf(skew * j0 / b)
+    return mean_val * d0 / (2 * np.pi)
