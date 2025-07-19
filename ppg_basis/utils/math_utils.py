@@ -108,3 +108,16 @@ def skewed_gaussian_mean(b, skew, M):
         j0 = -np.pi + (j + 0.5) * d0
         mean_val += 2 * j0 * norm_pdf(j0, b) * norm_cdf(skew * j0 / b)
     return mean_val * d0 / (2 * np.pi)
+
+@njit
+def interp1d_lut(x, x_table, y_table):
+    if x <= x_table[0]:
+        return y_table[0]
+    elif x >= x_table[-1]:
+        return y_table[-1]
+    for i in range(len(x_table) - 1):
+        if x_table[i] <= x <= x_table[i + 1]:
+            dx = x_table[i + 1] - x_table[i]
+            dy = y_table[i + 1] - y_table[i]
+            return y_table[i] + (x - x_table[i]) * dy / dx
+    return 0.0
