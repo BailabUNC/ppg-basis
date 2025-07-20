@@ -1,0 +1,7 @@
+numpy
+numba
+scipy
+notebook
+matplotlib
+ipykernel
+snakeviz

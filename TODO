@@ -2,7 +2,7 @@
 2.) add type suggestions to function declarations, confirm function descriptions are correct
 3.) Is there a way to consolidate rr and pp?
 
-@njit
+
 def _objective_function(model, signal, mse_flag: bool=True, corr_flag: bool=True, appg_flag: bool=True):
     if mse_flag:
         mse = np.sum((model - signal) ** 2)/len(model)

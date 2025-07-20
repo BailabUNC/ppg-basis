@@ -2,7 +2,7 @@ import numpy as np
 from ppg_basis.utils.math_utils import *
 from numba import njit
 
-@njit
+
 def objective_function(model, signal, mse_flag: bool=True, corr_flag: bool=True, appg_flag: bool=False):
     if mse_flag:
         mse = np.sum((model - signal) ** 2) / len(model)

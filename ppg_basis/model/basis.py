@@ -28,7 +28,7 @@ def basis_function(theta_diff: float, basis_type: str, params):
     else:
         raise ValueError(f"Unsupported basis type: {basis_type}")
 
-@njit
+
 def precompute_mean_basis_values(basis_params, basis_type_code, M):
     L = basis_params.shape[0]
     mean_vals = np.zeros(L)
@@ -39,7 +39,7 @@ def precompute_mean_basis_values(basis_params, basis_type_code, M):
             mean_vals[i] = skewed_gaussian_mean(basis_params[i, 1], basis_params[i, 2], M)
     return mean_vals
 
-@njit
+
 def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type_code, mean_vals):
     """
     Generate value for given point in PPG using specified basis function
@@ -82,7 +82,7 @@ def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type_code,
 
     return np.array([dxdt, dydt, dzdt])
 
-@njit
+
 def rk4_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type_code, mean_vals):
     """
     ODE solver using RK method
