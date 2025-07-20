@@ -32,12 +32,20 @@ def basis_function(theta_diff: float, basis_type: str, params):
 def precompute_mean_basis_values(basis_params, basis_type_code, M):
     L = basis_params.shape[0]
     mean_vals = np.zeros(L)
+    lut_vals = np.zeros((L,M))
     for i in range(L):
         if basis_type_code == 1:
-            mean_vals[i] = gamma_mean(basis_params[i, 1], basis_params[i, 2], M)
+            alpha, scale = basis_params[i, 1], basis_params[i, 2]
+            for j in range(M):
+                lut_vals[i,j] = gamma_pdf(x_table[j], alpha, scale)
+            mean_vals[i] = np.trapezoid(lut_vals[i], x_table)/(2*np.pi)
         elif basis_type_code == 2:
-            mean_vals[i] = skewed_gaussian_mean(basis_params[i, 1], basis_params[i, 2], M)
-    return mean_vals
+            b, skew = basis_params[i, 1], basis_params[i, 2]
+            for j in range(M):
+                x = x_table[j] - np.pi
+                lut_vals[i,j] = 2 * x * norm_pdf(x, b) * norm_cdf(skew * x / b)
+            mean_vals[i] = np.trapezoid(lut_vals[i], x_table)/(2*np.pi)
+    return mean_vals, lut_vals
 
 
 def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type_code, mean_vals):
@@ -66,19 +74,11 @@ def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type_code,
             a, b = basis_params[i, 0], basis_params[i, 1]
             b_sq = max(b ** 2, 1e-6)
             f = a * diff_theta * np.exp(-(diff_theta ** 2) / (2 * b_sq))
-            dzdt -= f * w
-        elif basis_type_code == 1:
-            a, alpha, scale = basis_params[i, 0], basis_params[i, 1], basis_params[i, 2]
+        else:
             xval = diff_theta + np.pi
-            f = a * (gamma_pdf(xval, alpha, scale) - mean_vals[i])
-            dzdt -= f * w
-        elif basis_type_code == 2:
-            a, b, skew = basis_params[i, 0], basis_params[i, 1], basis_params[i, 2]
-            norm_val = norm_pdf(diff_theta, b)
-            cdf_val = norm_cdf(skew * diff_theta / b)
-            f = 2 * a * diff_theta * norm_val * cdf_val
-            f-= mean_vals[i]
-            dzdt -= f * w
+            f = interp1d_lut(xval, x_table, lut_vals[i]) - mean_vals[i]
+            f *= basis_params[i, 0]
+        dzdt -= f * w
 
     return np.array([dxdt, dydt, dzdt])
 
@@ -101,10 +101,14 @@ def rk4_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type_code, me
     y[0] = y0
     for i in range(1, n):
         t = tspan[i - 1]
-        k1 = generator_equations(t, y[i - 1], rr, fs, thetai, basis_params, basis_type_code, mean_vals)
-        k2 = generator_equations(t + dt / 2, y[i - 1] + dt * k1 / 2, rr, fs, thetai, basis_params, basis_type_code, mean_vals)
-        k3 = generator_equations(t + dt / 2, y[i - 1] + dt * k2 / 2, rr, fs, thetai, basis_params, basis_type_code, mean_vals)
-        k4 = generator_equations(t + dt, y[i - 1] + dt * k3, rr, fs, thetai, basis_params, basis_type_code, mean_vals)
+        k1 = generator_equations(t, y[i - 1], rr, fs, thetai, basis_params,
+                                 basis_type_code, mean_vals, x_table, lut_vals)
+        k2 = generator_equations(t + dt / 2, y[i - 1] + dt * k1 / 2, rr, fs,
+                                 thetai, basis_params, basis_type_code, mean_vals, x_table, lut_vals)
+        k3 = generator_equations(t + dt / 2, y[i - 1] + dt * k2 / 2, rr, fs,
+                                 thetai, basis_params, basis_type_code, mean_vals, x_table, lut_vals)
+        k4 = generator_equations(t + dt, y[i - 1] + dt * k3, rr, fs,
+                                 thetai, basis_params, basis_type_code, mean_vals, x_table, lut_vals)
         y[i] = y[i - 1] + (dt / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
     return y
 
@@ -141,9 +145,14 @@ def unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params)
     basis_type_map = {'gaussian': 0, 'gamma': 1, 'skewed-gaussian': 2}
     basis_type_code = basis_type_map[basis_type]
 
-    mean_vals = precompute_mean_basis_values(np.array(basis_params), basis_type_code, M=200)
-    traj = rk4_integration(y0, tspan, rr, fs, thetai, np.array(basis_params), basis_type_code, mean_vals)
+    M = 500
+    x_table = np.linspace(0, 2 * np.pi, M)
+    mean_vals, lut_vals = precompute_mean_basis_values(np.array(basis_params),
+                                                       basis_type_code, M, x_table)
+    traj = rk4_integration(y0, tspan, rr, fs, thetai, np.array(basis_params),
+                           basis_type_code, mean_vals, x_table, lut_vals)
     z = traj[:, 2]
+    z = np.nan_to_num(z, nan=0.0, posinf=0.0, neginf=0.0)
     z = detrend(z)
     z -= np.mean(z)
     z = (z - np.min(z)) / (np.max(z) - np.min(z) + 1e-8)
