@@ -28,8 +28,8 @@ def basis_function(theta_diff: float, basis_type: str, params):
     else:
         raise ValueError(f"Unsupported basis type: {basis_type}")
 
-
-def precompute_mean_basis_values(basis_params, basis_type_code, M):
+@njit
+def precompute_mean_basis_values(basis_params, basis_type_code, M, x_table):
     L = basis_params.shape[0]
     mean_vals = np.zeros(L)
     lut_vals = np.zeros((L,M))
@@ -47,8 +47,8 @@ def precompute_mean_basis_values(basis_params, basis_type_code, M):
             mean_vals[i] = np.trapezoid(lut_vals[i], x_table)/(2*np.pi)
     return mean_vals, lut_vals
 
-
-def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type_code, mean_vals):
+@njit
+def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type_code, mean_vals, x_table, lut_vals):
     """
     Generate value for given point in PPG using specified basis function
     :param t: time
@@ -83,7 +83,7 @@ def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type_code,
     return np.array([dxdt, dydt, dzdt])
 
 
-def rk4_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type_code, mean_vals):
+def rk4_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type_code, mean_vals, x_table, lut_vals):
     """
     ODE solver using RK method
     :param y0: initial value

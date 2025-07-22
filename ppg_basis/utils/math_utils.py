@@ -2,7 +2,7 @@ import numpy as np
 from numba import njit, prange
 import math
 
-
+@njit
 def corrcoef_numba(x, y):
     """
     Calculate Pearson's Correlation Coefficient (r)
@@ -17,7 +17,7 @@ def corrcoef_numba(x, y):
     std_y = np.std(y)
     return cov / (std_x * std_y + 1e-8)
 
-
+@njit
 def gaussian_kernel1d(sigma, radius=3):
     """
     Generate a 1D Gaussian Kernel
@@ -31,8 +31,7 @@ def gaussian_kernel1d(sigma, radius=3):
     kernel /= kernel.sum()
     return kernel
 
-
-
+@njit
 def gaussian_filter1d_numba(arr, sigma):
     """
     Apply 1D Gaussian filter to array
@@ -53,8 +52,7 @@ def gaussian_filter1d_numba(arr, sigma):
         output[i] = acc
     return output
 
-
-
+@njit
 def gradient_1d(arr, dx=1.0):
     """
     Compute the gradient of a 1D array
@@ -74,24 +72,24 @@ def gradient_1d(arr, dx=1.0):
     grad[-1] = (arr[-1] - arr[-2]) / dx
     return grad
 
-
+@njit
 def gamma_pdf(x, alpha, scale):
-    if x < 0.0:
+    if x <= 0.0:
         return 0.0
     return math.exp((alpha - 1.0)*math.log(x)
                     - x/scale
                     - math.lgamma(alpha)
                     - alpha*math.log(scale))
 
-
+@njit
 def norm_pdf(x, b):
     return math.exp(-0.5*(x/b)**2) / (math.sqrt(2*math.pi) * b)
 
-
+@njit
 def norm_cdf(x):
     return 0.5 * (1.0 + math.erf(x/math.sqrt(2.0)))
 
-
+@njit
 def gamma_mean(alpha, scale, M):
     d0 = 2 * np.pi / M
     mean_val = 0.0
@@ -100,7 +98,7 @@ def gamma_mean(alpha, scale, M):
         mean_val += gamma_pdf(j0, alpha, scale)
     return mean_val * d0 / (2 * np.pi)
 
-
+@njit
 def skewed_gaussian_mean(b, skew, M):
     d0 = 2 * np.pi / M
     mean_val = 0.0
