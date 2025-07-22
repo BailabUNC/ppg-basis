@@ -5,6 +5,8 @@ from ppg_basis.model import *
 from ppg_basis.cost import objective_function
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+import fastplotlib as fpl
+from ipywidgets import IntSlider, Checkbox, VBox, HTML
 
 class ppgExtractor:
     def __init__(self, signal: np.ndarray, fs: float, hr: float, sigma: float, L: int,
@@ -144,75 +146,153 @@ class ppgExtractor:
             params_phase2 = res.x[self.L:].reshape((self.L, P))
         return theta_phase2, params_phase2
 
-    def plot_cost_landscape(self, mse_flag: bool = True, corr_flag: bool = False, appg_flag: bool = False, resolution: int = 10):
+    def _generate_cost_landscape(self,
+                                 basis_index: int,
+                                 mse_flag: bool,
+                                 corr_flag: bool,
+                                 appg_flag: bool,
+                                 resolution: int):
+        """
+        Generate full cost grid for a single basis.
+        Returns X, Y, Z, C, S arrays.
+        """
         P = self.params.shape[1]
-        theta_bounds = self.bounds[:self.L]
-        param_bounds = self.bounds[self.L:]
+        # bounds for theta_i and its P parameters
+        theta_min, theta_max = self.bounds[basis_index]
+        p_bounds = self.bounds[
+            self.L + basis_index*P : self.L + (basis_index+1)*P
+        ]
 
+        theta_vals = np.linspace(theta_min, theta_max, resolution)
+        p_ranges = [np.linspace(b[0], b[1], resolution) for b in p_bounds]
+        defaults = [np.mean(b) for b in p_bounds]
+
+        thetai = self.thetai.copy()
+        params = self.params.copy()
+
+        X, Y, Z, C, S = [], [], [], [], []
+        for θ in theta_vals:
+            for p1 in p_ranges[0]:
+                for p2 in p_ranges[1]:
+                    for p3 in (p_ranges[2] if P>2 else [None]):
+                        for p4 in (p_ranges[3] if P>3 else [None]):
+                            thetai[basis_index] = θ
+                            vec = [p1, p2]
+                            if P>2:
+                                vec.append(p3 if p3 is not None else defaults[2])
+                            if P>3:
+                                vec.append(p4 if p4 is not None else defaults[3])
+                            params[basis_index] = vec
+
+                            model_ppg = unified_model_ode(
+                                ppinterval=self.pp_interval,
+                                fs=self.fs,
+                                seconds=self.rr_interval,
+                                basis_type=self.basis_type,
+                                thetai=thetai,
+                                basis_params=params
+                            )
+                            cost_val = objective_function(
+                                model_ppg, self.signal,
+                                mse_flag=mse_flag,
+                                corr_flag=corr_flag,
+                                appg_flag=appg_flag
+                            )
+
+                            X.append(θ)
+                            Y.append(p1)
+                            Z.append(p2)
+                            C.append(cost_val)
+                            # record extra parameter for slicing
+                            if P>3:
+                                S.append(p4)
+                            elif P>2:
+                                S.append(p3)
+                            else:
+                                S.append(0.0)
+        return (
+            np.array(X), np.array(Y), np.array(Z),
+            np.array(C), np.array(S)
+        )
+
+    def plot_cost_landscape(self, mse_flag: bool = True, corr_flag: bool = True, appg_flag: bool = True,
+                            resolution: int = 10) -> list:
+        """
+        Displays an interactive Fastplotlib viewer for each basis.
+        Returns a list of ipywidget.VBox containers.
+        """
+        containers = []
         for i in range(self.L):
-            print(f"Basis {i + 1}/{self.L}")
+            print(f"Basis {i+1}/{self.L}")
+            X, Y, Z, C_raw, S = self._generate_cost_landscape(
+                basis_index=i,
+                mse_flag=mse_flag,
+                corr_flag=corr_flag,
+                appg_flag=appg_flag,
+                resolution=resolution
+            )
+            # normalize cost to [0,1]
+            C = (C_raw - C_raw.min()) / (C_raw.max() - C_raw.min())
 
-            # Parameter ranges
-            theta_range = np.linspace(theta_bounds[i][0], theta_bounds[i][1], resolution)
-            p_ranges = [
-                np.linspace(param_bounds[i * P + j][0], param_bounds[i * P + j][1], resolution)
-                for j in range(P)
+            coords = np.column_stack([X, Y, Z])
+            unique_S = sorted(set(S))
+            slice_masks = [(S==sv) for sv in unique_S]
+
+            # build figure
+            fig = fpl.Figure(shape=(1,1),
+                             cameras="3d",
+                             controller_types="orbit",
+                             size=(700,560))
+            mask0 = slice_masks[0]
+            scatter_ref = [
+                fig[0,0].add_scatter(
+                    coords[mask0],
+                    cmap='viridis',
+                    cmap_transform=C[mask0],
+                    sizes=10
+                )
             ]
-            fixed_vals = [np.mean(param_bounds[i * P + j]) for j in range(P)]
+            checkbox_auto = Checkbox(False, description="autoscale")
+            slider_idx = IntSlider(
+                value=0, min=0,
+                max=len(unique_S)-1,
+                step=1,
+                description="slice idx",
+                continuous_update=True
+            )
+            status = HTML()
 
-            X, Y, Z, C, S = [], [], [], [], []
+            def _update(change,
+                        fig=fig,
+                        coords=coords,
+                        C=C,
+                        masks=slice_masks,
+                        scatter_ref=scatter_ref,
+                        checkbox=checkbox_auto,
+                        status=status,
+                        basis=i,
+                        uniq_S=unique_S):
+                idx = change['new']
+                mask = masks[idx]
+                # remove + re‑add
+                fig[0,0].remove_graphic(scatter_ref[0])
+                scatter_ref[0] = fig[0,0].add_scatter(
+                    coords[mask],
+                    cmap='viridis',
+                    cmap_transform=C[mask],
+                    sizes=10
+                )
+                if checkbox.value:
+                    fig[0,0].auto_scale(maintain_aspect=False)
+                status.value = (
+                    f"Basis {basis+1}, slice {idx}, S={uniq_S[idx]:.3f}"
+                )
 
-            for theta in theta_range:
-                for p1 in p_ranges[0]:
-                    for p2 in p_ranges[1]:
-                        for p3 in (p_ranges[2] if P > 2 else [None]):
-                            for p4 in (p_ranges[3] if P > 3 else [None]):
-                                thetas = self.thetai.copy()
-                                thetas[i] = theta
-                                params = self.params.copy()
+            slider_idx.observe(_update, names=['value'])
+            # initial draw
+            _update({'new': 0})
 
-                                param_vec = [p1, p2]
-                                if P > 2:
-                                    param_vec.append(p3 if p3 is not None else fixed_vals[2])
-                                if P > 3:
-                                    param_vec.append(p4 if p4 is not None else fixed_vals[3])
-                                params[i] = param_vec
-
-                                x_full = np.concatenate([thetas, params.flatten()])
-                                model_ppg = unified_model_ode(
-                                    ppinterval=self.pp_interval,
-                                    fs=self.fs,
-                                    seconds=self.rr_interval,
-                                    basis_type=self.basis_type,
-                                    thetai=thetas,
-                                    basis_params=params
-                                )
-
-                                cost_total = objective_function(model_ppg, self.signal,
-                                                                mse_flag=mse_flag,
-                                                                corr_flag=corr_flag,
-                                                                appg_flag=appg_flag)
-
-                                X.append(theta)
-                                Y.append(p1)
-                                Z.append(p2)
-                                # Size reflects 4th parameter if present
-                                if P > 3:
-                                    size_val = p4
-                                elif P > 2:
-                                    size_val = p3
-                                else:
-                                    size_val = 0.5  # default size
-                                C.append(cost_total)
-                                S.append(40 + 80 * size_val)
-
-            fig = plt.figure(figsize=(10, 7))
-            ax = fig.add_subplot(111, projection='3d')
-            sc = ax.scatter(X, Y, Z, c=C, s=S, cmap='plasma', alpha=0.8)
-            ax.set_title(f"Full Cost Landscape for Basis {i + 1}")
-            ax.set_xlabel("Theta")
-            ax.set_ylabel("Param 1")
-            ax.set_zlabel("Param 2")
-            fig.colorbar(sc, ax=ax, shrink=0.6, label="Total Cost")
-            plt.tight_layout()
-            plt.show()
+            containers.append(
+                VBox([fig.show(), slider_idx, checkbox_auto, status])
+            )
+        return containers
