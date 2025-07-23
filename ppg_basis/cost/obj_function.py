@@ -3,7 +3,7 @@ from ppg_basis.utils.math_utils import *
 from numba import njit
 
 @njit
-def objective_function(model, signal, mse_flag: bool=True, corr_flag: bool=True, appg_flag: bool=False):
+def objective_function(model, signal, mse_flag: bool=True, corr_flag: bool=True, appg_flag: bool=False, func=None):
     if mse_flag:
         mse = np.sum((model - signal) ** 2) / len(model)
     else:
@@ -25,4 +25,10 @@ def objective_function(model, signal, mse_flag: bool=True, corr_flag: bool=True,
         appg = 1 - np.sqrt(np.sum((d2mod - d2sig) ** 2) / np.sum((d2sig - np.mean(d2sig)) ** 2))
     else:
         appg = 0
-    return mse + corr + appg
+
+    if func is None:
+        func_cost = 0
+    else:
+        func_cost = func(model, signal)
+
+    return mse + corr + appg + func_cost
