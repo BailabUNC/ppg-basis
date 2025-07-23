@@ -9,8 +9,8 @@ import fastplotlib as fpl
 from ipywidgets import IntSlider, Checkbox, VBox, HTML
 
 class ppgExtractor:
-    def __init__(self, signal: np.ndarray, fs: float, hr: float, sigma: float, L: int,
-                 basis_type: str, mse_flag: bool = True, corr_flag: bool = True, appg_flag: bool = False):
+    def __init__(self, signal: np.ndarray, fs: float, hr: float, sigma: float, L: int, basis_type: str,
+                 ode_solver: str = "rk3", mse_flag: bool = True, corr_flag: bool = True, appg_flag: bool = False):
         """
         Constructor for Extractor Class
         :param signal: Input signal to analyze
@@ -27,6 +27,7 @@ class ppgExtractor:
         self.fs = fs
         self.basis_type = basis_type
         self.L = L
+        self.ode_solver = ode_solver
 
         # cost‐function flags
         self.mse_flag = mse_flag
@@ -64,7 +65,8 @@ class ppgExtractor:
                                      seconds=self.rr_interval,
                                      basis_type=self.basis_type,
                                      thetai=theta_new,
-                                     basis_params=params_new)
+                                     basis_params=params_new,
+                                     ode_solver=self.ode_solver)
 
         # scalar cost
         return objective_function(model=model_ppg,
@@ -190,7 +192,8 @@ class ppgExtractor:
                                 seconds=self.rr_interval,
                                 basis_type=self.basis_type,
                                 thetai=thetai,
-                                basis_params=params
+                                basis_params=params,
+                                ode_solver=self.ode_solver
                             )
                             cost_val = objective_function(
                                 model_ppg, self.signal,
