@@ -3,8 +3,6 @@ from scipy.optimize import differential_evolution, minimize
 from ppg_basis.utils.generator_utils import *
 from ppg_basis.model import *
 from ppg_basis.cost import objective_function
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 import fastplotlib as fpl
 from ipywidgets import IntSlider, Checkbox, VBox, HTML
 
