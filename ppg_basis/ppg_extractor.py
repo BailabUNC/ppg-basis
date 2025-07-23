@@ -3,14 +3,12 @@ from scipy.optimize import differential_evolution, minimize
 from ppg_basis.utils.generator_utils import *
 from ppg_basis.model import *
 from ppg_basis.cost import objective_function
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 import fastplotlib as fpl
 from ipywidgets import IntSlider, Checkbox, VBox, HTML
 
 class ppgExtractor:
     def __init__(self, signal: np.ndarray, fs: float, hr: float, sigma: float, L: int, basis_type: str,
-                 ode_solver: str = "rk3", mse_flag: bool = True, corr_flag: bool = True, appg_flag: bool = False):
+                 ode_solver: str = "rk3", mse_flag: bool = True, corr_flag: bool = True, appg_flag: bool = False, cost_func=None):
         """
         Constructor for Extractor Class
         :param signal: Input signal to analyze
@@ -33,6 +31,7 @@ class ppgExtractor:
         self.mse_flag = mse_flag
         self.corr_flag = corr_flag
         self.appg_flag = appg_flag
+        self.cost_func = cost_func
 
         # build RR‐interval & initial basis
         self.rr_interval = len(signal) / fs
@@ -73,7 +72,8 @@ class ppgExtractor:
                                  signal=self.signal,
                                  mse_flag=self.mse_flag,
                                  corr_flag=self.corr_flag,
-                                 appg_flag=self.appg_flag)
+                                 appg_flag=self.appg_flag,
+                                 func=self.cost_func)
 
     def extract_ppg(self, block_update: bool = True, coord_cycles: int = 4):
         """

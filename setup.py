@@ -5,7 +5,9 @@ install_requires = [
     'jupyterlab',
     'matplotlib',
     'numba',
-    'scipy'
+    'scipy',
+    'fastplotlib',
+    'ipywidgets'
 ]
 
 setup(

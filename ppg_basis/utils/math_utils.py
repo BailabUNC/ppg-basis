@@ -115,7 +115,7 @@ def interp1d_lut(x, x_table, y_table):
         return y_table[0]
     elif x >= x_table[-1]:
         return y_table[-1]
-    for i in range(len(x_table) - 1):
+    for i in prange(len(x_table) - 1):
         if x_table[i] <= x <= x_table[i + 1]:
             dx = x_table[i + 1] - x_table[i]
             dy = y_table[i + 1] - y_table[i]
