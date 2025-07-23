@@ -83,9 +83,37 @@ def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type_code,
     return np.array([dxdt, dydt, dzdt])
 
 @njit
+def rk3_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type_code, mean_vals, x_table, lut_vals):
+    """
+    ODE solver using 3rd order RK method
+    :param y0: initial value
+    :param tspan: timepoints
+    :param rr: peak-to-peak array
+    :param fs: sampling rate
+    :param thetai: phase location in PPG period
+    :param basis_params: parameters for basis function
+    :param basis_type_code: target basis
+    :return: vector of coordinate values
+    """
+    n = len(tspan)
+    dt = tspan[1] - tspan[0]
+    y = np.zeros((len(tspan), 3))
+    y[0] = y0
+    for i in range(1, n):
+        t = tspan[i - 1]
+        k1 = generator_equations(t, y[i - 1], rr, fs, thetai, basis_params,
+                                 basis_type_code, mean_vals, x_table, lut_vals)
+        k2 = generator_equations(t + dt / 2, y[i - 1] + dt * k1 / 2, rr, fs,
+                                 thetai, basis_params, basis_type_code, mean_vals, x_table, lut_vals)
+        k3 = generator_equations(t + dt, y[i-1] - dt * k1 + 2.0 * dt * k2, rr, fs,
+                                 thetai, basis_params, basis_type_code, mean_vals, x_table, lut_vals)
+        y[i] = y[i - 1] + (dt / 6) * (k1 + 4.0 * k2 + k3)
+    return y
+
+@njit
 def rk4_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type_code, mean_vals, x_table, lut_vals):
     """
-    ODE solver using RK method
+    ODE solver using 4th order RK method
     :param y0: initial value
     :param tspan: timepoints
     :param rr: peak-to-peak array
@@ -113,7 +141,7 @@ def rk4_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type_code, me
     return y
 
 # Main model interface
-def unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params):
+def unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params, ode_solver):
     """
     Extract z(t) given input parameters and target basis function
     :param ppinterval: peak-to-peak array
@@ -122,6 +150,7 @@ def unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params)
     :param basis_type: target basis
     :param thetai: phase location in PPG period
     :param basis_params: parameters for basis function
+    :param ode_solver: select third or fourth order RK ODE solver
     :return: z(t)
     """
     dt = 1 / fs
@@ -149,7 +178,12 @@ def unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params)
     x_table = np.linspace(0, 2 * np.pi, M)
     mean_vals, lut_vals = precompute_mean_basis_values(np.array(basis_params),
                                                        basis_type_code, M, x_table)
-    traj = rk4_integration(y0, tspan, rr, fs, thetai, np.array(basis_params),
+
+    if ode_solver == "rk3":
+        traj = rk3_integration(y0, tspan, rr, fs, thetai, np.array(basis_params),
+                               basis_type_code, mean_vals, x_table, lut_vals)
+    else:
+        traj = rk4_integration(y0, tspan, rr, fs, thetai, np.array(basis_params),
                            basis_type_code, mean_vals, x_table, lut_vals)
     z = traj[:, 2]
     z = np.nan_to_num(z, nan=0.0, posinf=0.0, neginf=0.0)
