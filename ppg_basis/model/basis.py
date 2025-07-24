@@ -82,7 +82,7 @@ def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type_code,
 
     return np.array([dxdt, dydt, dzdt])
 
-
+@njit
 def rk4_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type_code, mean_vals, x_table, lut_vals):
     """
     ODE solver using RK method
