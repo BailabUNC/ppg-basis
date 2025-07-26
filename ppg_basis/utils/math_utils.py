@@ -31,7 +31,6 @@ def gaussian_kernel1d(sigma, radius=3):
     kernel /= kernel.sum()
     return kernel
 
-
 @njit
 def gaussian_filter1d_numba(arr, sigma):
     """
@@ -52,7 +51,6 @@ def gaussian_filter1d_numba(arr, sigma):
                 acc += arr[idx] * kernel[j + radius]
         output[i] = acc
     return output
-
 
 @njit
 def gradient_1d(arr, dx=1.0):
@@ -76,7 +74,7 @@ def gradient_1d(arr, dx=1.0):
 
 @njit
 def gamma_pdf(x, alpha, scale):
-    if x < 0.0:
+    if x <= 0.0:
         return 0.0
     return math.exp((alpha - 1.0)*math.log(x)
                     - x/scale
