@@ -1,5 +1,3 @@
-import numpy as np
-from ppg_basis.utils.math_utils import *
 from cost_metrics import terms
 from numba import njit
 
