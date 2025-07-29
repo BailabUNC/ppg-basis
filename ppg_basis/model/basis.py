@@ -29,17 +29,17 @@ def basis_function(theta_diff: float, basis_type: str, params):
         raise ValueError(f"Unsupported basis type: {basis_type}")
 
 @njit
-def precompute_mean_basis_values(basis_params, basis_type_code, M, x_table):
+def precompute_mean_basis_values(basis_params, basis_type, M, x_table):
     L = basis_params.shape[0]
     mean_vals = np.zeros(L)
     lut_vals = np.zeros((L,M))
     for i in range(L):
-        if basis_type_code == 1:
+        if basis_type == 'gamma':
             alpha, scale = basis_params[i, 1], basis_params[i, 2]
             for j in range(M):
                 lut_vals[i,j] = gamma_pdf(x_table[j], alpha, scale)
             mean_vals[i] = np.trapezoid(lut_vals[i], x_table)/(2*np.pi)
-        elif basis_type_code == 2:
+        elif basis_type == 'skewed-gaussian':
             b, skew = basis_params[i, 1], basis_params[i, 2]
             for j in range(M):
                 x = x_table[j] - np.pi
@@ -48,7 +48,7 @@ def precompute_mean_basis_values(basis_params, basis_type_code, M, x_table):
     return mean_vals, lut_vals
 
 @njit
-def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type_code, mean_vals, x_table, lut_vals):
+def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type, mean_vals, x_table, lut_vals):
     """
     Generate value for given point in PPG using specified basis function
     :param t: time
@@ -57,7 +57,7 @@ def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type_code,
     :param fs: sampling rate
     :param thetai: vector of phase locations for each basis in PPG
     :param basis_params: parameters for basis function
-    :param basis_type_code: target basis
+    :param basis_type: target basis
     :return: coordinate values calculated using basis & params
     """
     x, y, z = point
@@ -70,7 +70,7 @@ def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type_code,
 
     for i in range(len(thetai)):
         diff_theta = ((theta - thetai[i] + np.pi) % (2 * np.pi)) - np.pi
-        if basis_type_code == 0:
+        if basis_type == 'gaussian':
             a, b = basis_params[i, 0], basis_params[i, 1]
             b_sq = max(b ** 2, 1e-6)
             f = a * diff_theta * np.exp(-(diff_theta ** 2) / (2 * b_sq))
@@ -83,7 +83,7 @@ def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type_code,
     return np.array([dxdt, dydt, dzdt])
 
 @njit
-def rk3_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type_code, mean_vals, x_table, lut_vals):
+def rk3_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type, mean_vals, x_table, lut_vals):
     """
     ODE solver using 3rd order RK method
     :param y0: initial value
@@ -92,7 +92,7 @@ def rk3_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type_code, me
     :param fs: sampling rate
     :param thetai: phase location in PPG period
     :param basis_params: parameters for basis function
-    :param basis_type_code: target basis
+    :param basis_type: target basis
     :return: vector of coordinate values
     """
     n = len(tspan)
@@ -102,16 +102,16 @@ def rk3_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type_code, me
     for i in range(1, n):
         t = tspan[i - 1]
         k1 = generator_equations(t, y[i - 1], rr, fs, thetai, basis_params,
-                                 basis_type_code, mean_vals, x_table, lut_vals)
+                                 basis_type, mean_vals, x_table, lut_vals)
         k2 = generator_equations(t + dt / 2, y[i - 1] + dt * k1 / 2, rr, fs,
-                                 thetai, basis_params, basis_type_code, mean_vals, x_table, lut_vals)
+                                 thetai, basis_params, basis_type, mean_vals, x_table, lut_vals)
         k3 = generator_equations(t + dt, y[i-1] - dt * k1 + 2.0 * dt * k2, rr, fs,
-                                 thetai, basis_params, basis_type_code, mean_vals, x_table, lut_vals)
+                                 thetai, basis_params, basis_type, mean_vals, x_table, lut_vals)
         y[i] = y[i - 1] + (dt / 6) * (k1 + 4.0 * k2 + k3)
     return y
 
 @njit
-def rk4_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type_code, mean_vals, x_table, lut_vals):
+def rk4_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type, mean_vals, x_table, lut_vals):
     """
     ODE solver using 4th order RK method
     :param y0: initial value
@@ -120,7 +120,7 @@ def rk4_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type_code, me
     :param fs: sampling rate
     :param thetai: phase location in PPG period
     :param basis_params: parameters for basis function
-    :param basis_type_code: target basis
+    :param basis_type: target basis
     :return: vector of coordinate values
     """
     n = len(tspan)
@@ -130,13 +130,13 @@ def rk4_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type_code, me
     for i in range(1, n):
         t = tspan[i - 1]
         k1 = generator_equations(t, y[i - 1], rr, fs, thetai, basis_params,
-                                 basis_type_code, mean_vals, x_table, lut_vals)
+                                 basis_type, mean_vals, x_table, lut_vals)
         k2 = generator_equations(t + dt / 2, y[i - 1] + dt * k1 / 2, rr, fs,
-                                 thetai, basis_params, basis_type_code, mean_vals, x_table, lut_vals)
+                                 thetai, basis_params, basis_type, mean_vals, x_table, lut_vals)
         k3 = generator_equations(t + dt / 2, y[i - 1] + dt * k2 / 2, rr, fs,
-                                 thetai, basis_params, basis_type_code, mean_vals, x_table, lut_vals)
+                                 thetai, basis_params, basis_type, mean_vals, x_table, lut_vals)
         k4 = generator_equations(t + dt, y[i - 1] + dt * k3, rr, fs,
-                                 thetai, basis_params, basis_type_code, mean_vals, x_table, lut_vals)
+                                 thetai, basis_params, basis_type, mean_vals, x_table, lut_vals)
         y[i] = y[i - 1] + (dt / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
     return y
 
@@ -170,21 +170,17 @@ def unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params,
 
     y0 = np.array([-1.0, 0.0, 0.0])
 
-    # Basis type to code
-    basis_type_map = {'gaussian': 0, 'gamma': 1, 'skewed-gaussian': 2}
-    basis_type_code = basis_type_map[basis_type]
-
     M = 500
     x_table = np.linspace(0, 2 * np.pi, M)
     mean_vals, lut_vals = precompute_mean_basis_values(np.array(basis_params),
-                                                       basis_type_code, M, x_table)
+                                                       basis_type, M, x_table)
 
     if ode_solver == "rk3":
         traj = rk3_integration(y0, tspan, rr, fs, thetai, np.array(basis_params),
-                               basis_type_code, mean_vals, x_table, lut_vals)
+                               basis_type, mean_vals, x_table, lut_vals)
     else:
         traj = rk4_integration(y0, tspan, rr, fs, thetai, np.array(basis_params),
-                           basis_type_code, mean_vals, x_table, lut_vals)
+                           basis_type, mean_vals, x_table, lut_vals)
     z = traj[:, 2]
     z = np.nan_to_num(z, nan=0.0, posinf=0.0, neginf=0.0)
     z = detrend(z)
