@@ -1,14 +1,22 @@
 import numpy as np
 from scipy.optimize import differential_evolution, minimize
-from ppg_basis.utils.generator_utils import *
+from ppg_basis.utils.ppg_utils import *
 from ppg_basis.model import *
 from ppg_basis.cost import objective_function
 import fastplotlib as fpl
 from ipywidgets import IntSlider, Checkbox, VBox, HTML
 
 class ppgExtractor:
-    def __init__(self, signal: np.ndarray, fs: float, hr: float, sigma: float, L: int, basis_type: str,
-                 ode_solver: str = "rk3", mse_flag: bool = True, corr_flag: bool = True, appg_flag: bool = False, cost_func=None):
+    def __init__(self, 
+                 signal: np.ndarray, 
+                 fs: float, 
+                 hr: float, 
+                 sigma: float, 
+                 L: int, 
+                 basis_type: str,
+                 ode_solver: str = "rk3", 
+                 cost_metrics: list = ["mse", "corr"],
+                 cost_func = None):
         """
         Constructor for Extractor Class
         :param signal: Input signal to analyze
@@ -28,9 +36,7 @@ class ppgExtractor:
         self.ode_solver = ode_solver
 
         # cost‐function flags
-        self.mse_flag = mse_flag
-        self.corr_flag = corr_flag
-        self.appg_flag = appg_flag
+        self.cost_metrics = cost_metrics
         self.cost_func = cost_func
 
         # build RR‐interval & initial basis
@@ -70,9 +76,7 @@ class ppgExtractor:
         # scalar cost
         return objective_function(model=model_ppg,
                                  signal=self.signal,
-                                 mse_flag=self.mse_flag,
-                                 corr_flag=self.corr_flag,
-                                 appg_flag=self.appg_flag,
+                                 cost_metrics=self.cost_metrics,
                                  func=self.cost_func)
 
     def extract_ppg(self, block_update: bool = True, coord_cycles: int = 4):
@@ -197,9 +201,7 @@ class ppgExtractor:
                             )
                             cost_val = objective_function(
                                 model_ppg, self.signal,
-                                mse_flag=mse_flag,
-                                corr_flag=corr_flag,
-                                appg_flag=appg_flag
+                                cost_metrics = self.cost_metrics
                             )
 
                             X.append(θ)

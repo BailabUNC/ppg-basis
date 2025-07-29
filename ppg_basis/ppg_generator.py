@@ -1,5 +1,5 @@
 from ppg_basis import model
-from ppg_basis.utils.generator_utils import pp_interval_generator
+from ppg_basis.utils.ppg_utils import pp_interval_generator
 
 class ppgGenerator():
     def __init__(self, fs, hr, mu, sigma, duration, L, basis_type, ode_solver: str = "rk3", thetas=None, params=None):
