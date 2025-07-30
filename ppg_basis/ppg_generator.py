@@ -2,7 +2,30 @@ from ppg_basis import model
 from ppg_basis.utils.ppg_utils import pp_interval_generator
 
 class ppgGenerator():
-    def __init__(self, fs, hr, mu, sigma, duration, L, basis_type, ode_solver: str = "rk3", thetas=None, params=None):
+    def __init__(self, 
+                 fs, 
+                 hr, 
+                 mu, 
+                 sigma, 
+                 duration, 
+                 L, 
+                 basis_type, 
+                 ode_solver: str = "rk3", 
+                 thetas=None, 
+                 params=None):
+        """
+        Constructor for Generator Class
+        :param fs: TODO
+        :param hr: TODO
+        :param mu: TODO
+        :param sigma: TODO
+        :param duration: TODO
+        :param L: TODO
+        :param basis_type: TODO
+        :param ode_solver: TODO
+        :param thetas: TODO
+        :param params: TODO
+        """
         self.fs =fs
         self.hr = hr
         self.mu = mu

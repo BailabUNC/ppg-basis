@@ -30,6 +30,9 @@ def basis_function(theta_diff: float, basis_type: str, params):
 
 @njit
 def precompute_mean_basis_values(basis_params, basis_type, M, x_table):
+    """
+    TODO
+    """
     L = basis_params.shape[0]
     mean_vals = np.zeros(L)
     lut_vals = np.zeros((L,M))
@@ -58,6 +61,9 @@ def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type, mean
     :param thetai: vector of phase locations for each basis in PPG
     :param basis_params: parameters for basis function
     :param basis_type: target basis
+    :param mean_vals: TODO
+    :param x_table: x values for interp1d
+    :param lut_vals: lookup table values
     :return: coordinate values calculated using basis & params
     """
     x, y, z = point
@@ -93,6 +99,9 @@ def rk3_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type, mean_va
     :param thetai: phase location in PPG period
     :param basis_params: parameters for basis function
     :param basis_type: target basis
+    :param mean_vals: TODO
+    :param x_table: x values for interp1d
+    :param lut_vals: lookup table values
     :return: vector of coordinate values
     """
     n = len(tspan)
@@ -121,6 +130,9 @@ def rk4_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type, mean_va
     :param thetai: phase location in PPG period
     :param basis_params: parameters for basis function
     :param basis_type: target basis
+    :param mean_vals: TODO
+    :param x_table: x values for interp1d
+    :param lut_vals: lookup table values
     :return: vector of coordinate values
     """
     n = len(tspan)
@@ -221,45 +233,45 @@ def generate_basis_parameters(L, basis_type, random_state=None):
     return thetai, np.array(params)
 
 def get_bounds_and_constraints(L, basis_type):
-        """
-        Generate bounds and constraints for optimization
-        :param L: number of basis functions
-        :param basis_type: basis function
-        :return: bounds and constraints
-        """
-        # 1) Theta bounds
-        theta_bounds = [(-np.pi, np.pi)] * L
+    """
+    Generate bounds and constraints for optimization
+    :param L: number of basis functions
+    :param basis_type: basis function
+    :return: bounds and constraints
+    """
+    # 1) Theta bounds
+    theta_bounds = [(-np.pi, np.pi)] * L
 
-        # 2) Parameter bounds by basis type
-        if basis_type == 'gaussian':
-            # each basis has (a, b)
-            param_bnds = [(0.0, 1.0), (0.05, 3.0)]
-        elif basis_type == 'gamma':
-            # each basis has (a, alpha, scale)
-            param_bnds = [(0.0, 1.0), (1.0, 6.0), (0.05, 3.0)]
-        elif basis_type == 'skewed-gaussian':
-            # each basis has (a, b, skew)
-            param_bnds = [(0.0, 1.0), (0.05, 3.0), (-10.0, 10.0)]
-        else:
-            raise ValueError(f"Unsupported basis type: {basis_type}")
+    # 2) Parameter bounds by basis type
+    if basis_type == 'gaussian':
+        # each basis has (a, b)
+        param_bnds = [(0.0, 1.0), (0.05, 3.0)]
+    elif basis_type == 'gamma':
+        # each basis has (a, alpha, scale)
+        param_bnds = [(0.0, 1.0), (1.0, 6.0), (0.05, 3.0)]
+    elif basis_type == 'skewed-gaussian':
+        # each basis has (a, b, skew)
+        param_bnds = [(0.0, 1.0), (0.05, 3.0), (-10.0, 10.0)]
+    else:
+        raise ValueError(f"Unsupported basis type: {basis_type}")
 
-        # replicate for L bases
-        param_bounds = param_bnds * L
+    # replicate for L bases
+    param_bounds = param_bnds * L
 
-        # combine into one list: [θ-bounds…, param-bounds…]
-        bounds = theta_bounds + param_bounds
+    # combine into one list: [θ-bounds…, param-bounds…]
+    bounds = theta_bounds + param_bounds
 
-        # 3) Build θ-ordering constraint
-        if L > 1:
-            n = len(bounds)
-            A = np.zeros((L - 1, n))
-            for i in range(L - 1):
-                A[i, i] = 1  # θ_i
-                A[i, i + 1] = -1  # θ_{i+1}
-            lb = -np.inf * np.ones(L - 1)
-            ub = 0 * np.ones(L - 1)
-            constraint = LinearConstraint(A, lb, ub)
-        else:
-            constraint = None
+    # 3) Build θ-ordering constraint
+    if L > 1:
+        n = len(bounds)
+        A = np.zeros((L - 1, n))
+        for i in range(L - 1):
+            A[i, i] = 1  # θ_i
+            A[i, i + 1] = -1  # θ_{i+1}
+        lb = -np.inf * np.ones(L - 1)
+        ub = 0 * np.ones(L - 1)
+        constraint = LinearConstraint(A, lb, ub)
+    else:
+        constraint = None
 
-        return bounds, constraint
+    return bounds, constraint

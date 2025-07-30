@@ -74,6 +74,9 @@ def gradient_1d(arr, dx=1.0):
 
 @njit
 def gamma_pdf(x, alpha, scale):
+    """
+    TODO
+    """
     if x <= 0.0:
         return 0.0
     return math.exp((alpha - 1.0)*math.log(x)
@@ -83,14 +86,23 @@ def gamma_pdf(x, alpha, scale):
 
 @njit
 def norm_pdf(x, b):
+    """
+    TODO
+    """
     return math.exp(-0.5*(x/b)**2) / (math.sqrt(2*math.pi) * b)
 
 @njit
 def norm_cdf(x):
+    """
+    TODO
+    """
     return 0.5 * (1.0 + math.erf(x/math.sqrt(2.0)))
 
 @njit
 def gamma_mean(alpha, scale, M):
+    """
+    TODO
+    """
     d0 = 2 * np.pi / M
     mean_val = 0.0
     for j in range(M):
@@ -100,6 +112,9 @@ def gamma_mean(alpha, scale, M):
 
 @njit
 def skewed_gaussian_mean(b, skew, M):
+    """
+    TODO
+    """
     d0 = 2 * np.pi / M
     mean_val = 0.0
     for j in range(M):
@@ -109,6 +124,13 @@ def skewed_gaussian_mean(b, skew, M):
 
 @njit
 def interp1d_lut(x, x_table, y_table):
+    """
+    Perform 1D linear interpolation using lookup tables
+    :param x: input value
+    :param x_table: sorted x-values
+    :param y_table: corresponding y-values
+    :return: interpolated estimate of y = f(x)
+    """
     if x <= x_table[0]:
         return y_table[0]
     elif x >= x_table[-1]:

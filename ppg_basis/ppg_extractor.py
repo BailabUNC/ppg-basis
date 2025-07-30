@@ -25,9 +25,9 @@ class ppgExtractor:
         :param sigma: Standard Deviation in HR
         :param L: Number of Basis Functions
         :param basis_type: Basis function (gaussian, gamma, or skewed-gaussian)
-        :param mse_flag: Cost includes mean-squared-error
-        :param corr_flag: Cost includes (1-corr)
-        :param appg_flag: Cost includes normalized root-mean-square error of second derivative of PPG
+        :param ode_solver: TODO
+        :param cost_metrics: TODO
+        :param cost_fund: TODO
         """
         self.signal = signal
         self.fs = fs
