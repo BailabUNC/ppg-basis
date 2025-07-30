@@ -1,16 +1,31 @@
 import numpy as np
 from ppg_basis.utils.math_utils import *
 
-# mse_flag
 def mse(model, signal):
+    """
+    Generate MSE cost metric
+    :param model: reference signal
+    :param signal: reconstructed signal
+    :return: MSE
+    """
     return np.sum((model - signal) ** 2) / len(model)
 
-# corr_flag
 def corr(model, signal):
+    """
+    Generate Pearson's Correlation Coefficient cost metric
+    :param model: reference signal
+    :param signal: reconstructed signal
+    :return: Corr. Coefficient
+    """
     return 1 - corrcoef_numba(model, signal)
 
-# appg_flag
 def appg(model, signal):
+    """
+    Generate NRMSE of 2nd derivative of PPG (aPPG)
+    :param model: reference signal
+    :param signal: reconstructed signal
+    :return: NRMSE
+    """
     sig_smooth = gaussian_filter1d_numba(signal, sigma=2)
     dsig = gradient_1d(sig_smooth, 1 / 125)
     d2sig = gradient_1d(dsig, 1 / 125)
