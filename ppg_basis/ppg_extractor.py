@@ -154,9 +154,6 @@ class ppgExtractor:
 
     def _generate_cost_landscape(self,
                                  basis_index: int,
-                                 mse_flag: bool,
-                                 corr_flag: bool,
-                                 appg_flag: bool,
                                  resolution: int):
         """
         Generate full cost grid for a single basis.
@@ -220,8 +217,7 @@ class ppgExtractor:
             np.array(C), np.array(S)
         )
 
-    def plot_cost_landscape(self, mse_flag: bool = True, corr_flag: bool = True, appg_flag: bool = True,
-                            resolution: int = 10) -> list:
+    def plot_cost_landscape(self, resolution: int = 10) -> list:
         """
         Displays an interactive Fastplotlib viewer for each basis.
         Returns a list of ipywidget.VBox containers.
@@ -231,9 +227,6 @@ class ppgExtractor:
             print(f"Basis {i+1}/{self.L}")
             X, Y, Z, C_raw, S = self._generate_cost_landscape(
                 basis_index=i,
-                mse_flag=mse_flag,
-                corr_flag=corr_flag,
-                appg_flag=appg_flag,
                 resolution=resolution
             )
             # normalize cost to [0,1]
