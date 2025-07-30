@@ -15,16 +15,16 @@ class ppgGenerator():
                  params=None):
         """
         Constructor for Generator Class
-        :param fs: TODO
-        :param hr: TODO
-        :param mu: TODO
-        :param sigma: TODO
-        :param duration: TODO
-        :param L: TODO
-        :param basis_type: TODO
-        :param ode_solver: TODO
-        :param thetas: TODO
-        :param params: TODO
+        :param fs: sampling rate (Hz)
+        :param hr: Heart Rate (BPM)
+        :param mu: mean pulse-to-pulse interval variation
+        :param sigma: Standard Deviation in HR
+        :param duration: total time of PPG window
+        :param L: Number of Basis Functions
+        :param basis_type: Basis function (gaussian, gamma, or skewed-gaussian)
+        :param ode_solver: method of ODE solving (generally an n-th order RK method)
+        :param thetas: phase location in PPG period
+        :param params: basis parameter list
         """
         self.fs =fs
         self.hr = hr

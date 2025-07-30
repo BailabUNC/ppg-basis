@@ -25,9 +25,9 @@ class ppgExtractor:
         :param sigma: Standard Deviation in HR
         :param L: Number of Basis Functions
         :param basis_type: Basis function (gaussian, gamma, or skewed-gaussian)
-        :param ode_solver: TODO
-        :param cost_metrics: TODO
-        :param cost_fund: TODO
+        :param ode_solver: method of ODE solving (generally an n-th order RK method)
+        :param cost_metrics: cost metrics to be added to objective func
+        :param cost_func: cost function to be added to objective func
         """
         self.signal = signal
         self.fs = fs
