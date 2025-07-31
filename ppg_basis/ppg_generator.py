@@ -48,6 +48,10 @@ class ppgGenerator():
         self.signal = None
 
     def generate_signal(self):
+        """
+        Generates PPG signal
+        :return: z(t)
+        """
         self.signal = model.unified_model_ode(ppinterval=self.ppinterval,
                                               fs=self.fs,
                                               seconds=self.duration,

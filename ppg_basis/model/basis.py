@@ -31,7 +31,13 @@ def basis_function(theta_diff: float, basis_type: str, params):
 @njit
 def precompute_mean_basis_values(basis_params, basis_type, M, x_table):
     """
-    TODO
+    Compute mean of each basis and look up table vals
+    :param basis_params: basis functions (one set of parameters per row)
+    :param basis_type: target basis
+    :param M: number of sampling points = len(x_table)
+    :param x_table: array of sampling points
+    :return mean_vals: mean of each basis function
+    :return lut_vals: look up table values (discretized basis function)
     """
     L = basis_params.shape[0]
     mean_vals = np.zeros(L)
@@ -61,7 +67,7 @@ def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type, mean
     :param thetai: vector of phase locations for each basis in PPG
     :param basis_params: parameters for basis function
     :param basis_type: target basis
-    :param mean_vals: TODO
+    :param mean_vals: mean of each basis
     :param x_table: x values for interp1d
     :param lut_vals: lookup table values
     :return: coordinate values calculated using basis & params
@@ -99,7 +105,7 @@ def rk3_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type, mean_va
     :param thetai: phase location in PPG period
     :param basis_params: parameters for basis function
     :param basis_type: target basis
-    :param mean_vals: TODO
+    :param mean_vals: mean of each basis
     :param x_table: x values for interp1d
     :param lut_vals: lookup table values
     :return: vector of coordinate values
@@ -130,7 +136,7 @@ def rk4_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type, mean_va
     :param thetai: phase location in PPG period
     :param basis_params: parameters for basis function
     :param basis_type: target basis
-    :param mean_vals: TODO
+    :param mean_vals: mean of each basis
     :param x_table: x values for interp1d
     :param lut_vals: lookup table values
     :return: vector of coordinate values
