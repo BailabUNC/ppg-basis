@@ -1,7 +1,5 @@
-from cost_metrics import terms
-from numba import njit
+from .cost_metrics import terms
 
-@njit
 def objective_function(model, signal, cost_metrics: list, func = None):
     """
     Returns objective function by combining cost metrics
