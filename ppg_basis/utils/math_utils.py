@@ -74,6 +74,13 @@ def gradient_1d(arr, dx=1.0):
 
 @njit
 def gamma_pdf(x, alpha, scale):
+    """
+    Compute PDF of gamma func at a given point
+    :param x: x value to compute PDF at
+    :param alpha: shape parameter of gamma dist
+    :param scale: scale parameter of gamma dist
+    :return: Value of gamma PDF at x
+    """
     if x <= 0.0:
         return 0.0
     return math.exp((alpha - 1.0)*math.log(x)
@@ -83,14 +90,32 @@ def gamma_pdf(x, alpha, scale):
 
 @njit
 def norm_pdf(x, b):
+    """
+    Compute PDF of normal distribution at given point
+    :param x: x value to compute PDF at
+    :param b: standard deviation
+    :return: Value of normal PDF at x
+    """
     return math.exp(-0.5*(x/b)**2) / (math.sqrt(2*math.pi) * b)
 
 @njit
 def norm_cdf(x):
+    """
+    Compute CDF of normal distribution at given point
+    :param x: x value to compute CDF at
+    :return: Value of normal CDF at x
+    """
     return 0.5 * (1.0 + math.erf(x/math.sqrt(2.0)))
 
 @njit
 def gamma_mean(alpha, scale, M):
+    """
+    Approximate mean of gamma distribution over 2pi
+    :param alpha: shape parameter of gamma dist
+    :param scale: scale parameter of gamma dist
+    :param M: number of integration steps
+    :return: approximated mean of gamma dist over 2pi
+    """
     d0 = 2 * np.pi / M
     mean_val = 0.0
     for j in range(M):
@@ -100,6 +125,13 @@ def gamma_mean(alpha, scale, M):
 
 @njit
 def skewed_gaussian_mean(b, skew, M):
+    """
+    Approximate mean of skewed Gaussian distribution over -pi to pi
+    :param b: std of the Normal distribution
+    :param skew: skewness parameter
+    :param M: number of integration steps
+    :return: approximated mean of skewed Gaussian distribution over -pi to pi
+    """
     d0 = 2 * np.pi / M
     mean_val = 0.0
     for j in range(M):
@@ -109,6 +141,13 @@ def skewed_gaussian_mean(b, skew, M):
 
 @njit
 def interp1d_lut(x, x_table, y_table):
+    """
+    Perform 1D linear interpolation using lookup tables
+    :param x: input value
+    :param x_table: sorted x-values
+    :param y_table: corresponding y-values
+    :return: interpolated estimate of y = f(x)
+    """
     if x <= x_table[0]:
         return y_table[0]
     elif x >= x_table[-1]:

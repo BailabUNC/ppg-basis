@@ -1,8 +1,31 @@
 from ppg_basis import model
-from ppg_basis.utils.generator_utils import pp_interval_generator
+from ppg_basis.utils.ppg_utils import pp_interval_generator
 
 class ppgGenerator():
-    def __init__(self, fs, hr, mu, sigma, duration, L, basis_type, ode_solver: str = "rk3", thetas=None, params=None):
+    def __init__(self, 
+                 fs, 
+                 hr, 
+                 mu, 
+                 sigma, 
+                 duration, 
+                 L, 
+                 basis_type, 
+                 ode_solver: str = "rk3", 
+                 thetas=None, 
+                 params=None):
+        """
+        Constructor for Generator Class
+        :param fs: sampling rate (Hz)
+        :param hr: Heart Rate (BPM)
+        :param mu: mean pulse-to-pulse interval variation
+        :param sigma: Standard Deviation in HR
+        :param duration: total time of PPG window
+        :param L: Number of Basis Functions
+        :param basis_type: Basis function (gaussian, gamma, or skewed-gaussian)
+        :param ode_solver: method of ODE solving (generally an n-th order RK method)
+        :param thetas: phase location in PPG period
+        :param params: basis parameter list
+        """
         self.fs =fs
         self.hr = hr
         self.mu = mu
@@ -25,6 +48,10 @@ class ppgGenerator():
         self.signal = None
 
     def generate_signal(self):
+        """
+        Generates PPG signal
+        :return: z(t)
+        """
         self.signal = model.unified_model_ode(ppinterval=self.ppinterval,
                                               fs=self.fs,
                                               seconds=self.duration,
