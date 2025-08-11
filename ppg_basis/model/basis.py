@@ -3,7 +3,9 @@ from numba import njit
 from ppg_basis.utils.math_utils import *
 from scipy.optimize import LinearConstraint
 from scipy.signal import detrend
+from ppg_basis.utils.math_utils import _interp1d_lut_scalar
 
+@njit
 def basis_function(theta_diff: float, basis_type: str, params):
     """
     define basis function for PPG
@@ -28,7 +30,35 @@ def basis_function(theta_diff: float, basis_type: str, params):
     else:
         raise ValueError(f"Unsupported basis type: {basis_type}")
 
-@njit
+@njit(cache=True)
+def _wrap_pi(x):
+    return ((x + np.pi) % (2 * np.pi)) - np.pi
+
+@njit(cache=True)
+def _phase_from_rr(ppinterval, fs, n_samples):
+    """
+    Construct per-sample RR, ω=2π/RR, and phase θ[n] that wraps in [-π, π]
+    """
+    rr = np.empty(n_samples)
+    total_samples = 0
+    i = 0
+    while total_samples < n_samples:
+        intv = ppinterval[i % len(ppinterval)]
+        num = int(np.ceil(fs * intv))
+        end = min(total_samples + num, n_samples)
+        rr[total_samples:end] = intv
+        total_samples = end
+        i += 1
+
+    omega = 2.0 * np.pi / rr
+    theta = np.empty(n_samples)
+    theta[0] = -np.pi  # consistent with x0=-1,y0=0 → θ≈-π
+    dt = 1.0 / fs
+    for k in range(1, n_samples):
+        theta[k] = _wrap_pi(theta[k-1] + omega[k-1]*dt)
+    return rr, omega, theta
+
+@njit(cache=True)
 def precompute_mean_basis_values(basis_params, basis_type, M, x_table):
     """
     Compute mean of each basis and look up table vals
@@ -56,7 +86,94 @@ def precompute_mean_basis_values(basis_params, basis_type, M, x_table):
             mean_vals[i] = np.trapezoid(lut_vals[i], x_table)/(2*np.pi)
     return mean_vals, lut_vals
 
+@njit(parallel=True, cache=True)
+def _precompute_f_and_G(basis_params, basis_type, M):
+    """
+    Build LUTs for f(θ) with unit amplitude (a=1), and its primitive
+    G(θ)=∫_0^θ (f(u)-mean) du on a uniform grid in [0, 2π].
+    Subtracting mean enforces periodicity (no drift over a cycle).
+    """
+    L = basis_params.shape[0]
+    x_table = np.linspace(0.0, 2.0*np.pi, M)
+    f_lut = np.zeros((L, M))
+    mean_vals = np.zeros(L)
+
+    for i in range(L):
+        if basis_type == 'gaussian':
+            # f(x)=x*exp(-x^2/(2 b^2)), on x in [-π, π]
+            b = basis_params[i, 1]
+            bb = max(b, 1e-6)
+            inv2b2 = 1.0/(2.0*bb*bb)
+            for j in prange(M):
+                x = x_table[j] - np.pi
+                f_lut[i, j] = x * np.exp(-(x*x) * inv2b2)
+            mean_vals[i] = 0.0  # odd over symmetric interval
+        elif basis_type == 'gamma':
+            alpha, scale = basis_params[i, 1], basis_params[i, 2]
+            for j in prange(M):
+                f_lut[i, j] = gamma_pdf(x_table[j], alpha, scale)
+            mean_vals[i] = np.trapezoid(f_lut[i], x_table) / (2.0*np.pi)
+        elif basis_type == 'skewed-gaussian':
+            b, skew = basis_params[i, 1], basis_params[i, 2]
+            bb = max(b, 1e-6)
+            for j in prange(M):
+                x = x_table[j] - np.pi
+                f_lut[i, j] = 2.0 * x * norm_pdf(x, bb) * norm_cdf(skew * x / bb)
+            mean_vals[i] = np.trapezoid(f_lut[i], x_table) / (2.0*np.pi)
+        else:
+            raise ValueError("Unsupported basis type")
+
+    # zero-mean so G is periodic
+    for i in range(L):
+        f_lut[i] -= mean_vals[i]
+
+    # primitive via cumulative trapezoid
+    G_lut = np.zeros_like(f_lut)
+    for i in prange(L):
+        acc = 0.0
+        G_lut[i, 0] = 0.0
+        for j in range(1, M):
+            dx = x_table[j] - x_table[j-1]
+            acc += 0.5*(f_lut[i, j-1] + f_lut[i, j]) * dx
+            G_lut[i, j] = acc
+        # remove tiny residual slope to force exact periodicity
+        slope = G_lut[i, -1] / (2.0*np.pi)
+        for j in prange(M):
+            G_lut[i, j] -= slope * x_table[j]
+
+    return x_table, G_lut
+
 @njit
+def _synthesize_basis_core(theta, thetai, basis_params, x_table, G_lut):
+    n = theta.size
+    L = thetai.size
+    z = np.zeros(n)
+    for i in range(L):  # parallel over bases
+        a = basis_params[i, 0]
+        for k in range(n):
+            # wrap to [-π, π], then shift to [0, 2π] for LUT
+            x = _wrap_pi(theta[k] - thetai[i]) + np.pi
+            Gi = _interp1d_lut_scalar(x, x_table, G_lut[i])
+            z[k] -= a * Gi
+    return z
+
+@njit
+def _synthesize_gaussian_core(theta, thetai, basis_params):
+    n = theta.size
+    L = thetai.size
+    z = np.zeros(n)
+    for i in range(L):              # parallelize across bases
+        a = basis_params[i, 0]
+        b = max(basis_params[i, 1], 1e-6)
+        inv2b2 = 1.0 / (2.0 * b * b)
+        amp = a * b * b
+        for k in range(n):
+            diff = ((theta[k] - thetai[i] + np.pi) % (2.0*np.pi)) - np.pi
+            z[k] += amp * np.exp(- (diff * diff) * inv2b2)
+    return z
+
+
+@njit(cache=True)
 def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type, mean_vals, x_table, lut_vals):
     """
     Generate value for given point in PPG using specified basis function
@@ -94,7 +211,7 @@ def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type, mean
 
     return np.array([dxdt, dydt, dzdt])
 
-@njit
+@njit(cache=True)
 def rk3_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type, mean_vals, x_table, lut_vals):
     """
     ODE solver using 3rd order RK method
@@ -125,7 +242,7 @@ def rk3_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type, mean_va
         y[i] = y[i - 1] + (dt / 6) * (k1 + 4.0 * k2 + k3)
     return y
 
-@njit
+@njit(cache=True)
 def rk4_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type, mean_vals, x_table, lut_vals):
     """
     ODE solver using 4th order RK method
@@ -157,6 +274,33 @@ def rk4_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type, mean_va
                                  thetai, basis_params, basis_type, mean_vals, x_table, lut_vals)
         y[i] = y[i - 1] + (dt / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
     return y
+
+def unified_model_basis(ppinterval, fs, seconds, basis_type, thetai, basis_params):
+    """
+    Generate z(t) directly from basis primitives:
+    z(θ) = - Σ_i a_i * G_i(θ - θ_i), where G_i is primitive of f_i with zero-mean.
+    """
+    n_samples = int(np.ceil(seconds * fs))
+    # phase trajectory from RR
+    rr, omega, theta = _phase_from_rr(ppinterval, fs, n_samples)
+
+    if basis_type == 'gaussian':
+        z = _synthesize_gaussian_core(theta, thetai, np.array(basis_params))
+    else:
+        # precompute primitive LUTs for each basis (unit amplitude)
+        M = 500
+        x_table = np.linspace(0.0, 2.0*np.pi, M)  # keep a python copy for numba signature
+        _, G_lut = _precompute_f_and_G(np.array(basis_params), basis_type, M)
+
+        # synthesize
+        z = _synthesize_basis_core(theta, thetai, np.array(basis_params), x_table, G_lut)
+
+    # same post as ODE path
+    z = np.nan_to_num(z, nan=0.0, posinf=0.0, neginf=0.0)
+    z = detrend(z)
+    z -= np.mean(z)
+    z = (z - np.min(z)) / (np.max(z) - np.min(z) + 1e-8)
+    return z
 
 # Main model interface
 def unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params, ode_solver):
@@ -205,6 +349,18 @@ def unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params,
     z -= np.mean(z)
     z = (z - np.min(z)) / (np.max(z) - np.min(z) + 1e-8)
     return z
+
+def unified_model(ppinterval, fs, seconds, basis_type, thetai, basis_params, solver="rk4"):
+    """
+    Unified entry point:
+      - mode="basis"  → closed-form basis synthesis (no ODE)
+      - mode="ode"    → RK ODE (ode_solver in {"rk3","rk4"})
+    """
+    if solver == "basis":
+        return unified_model_basis(ppinterval, fs, seconds, basis_type, thetai, basis_params)
+    # fall back to ODE route
+    return unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params, solver)
+
 
 def generate_basis_parameters(L, basis_type, random_state=None):
     """

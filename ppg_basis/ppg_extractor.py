@@ -7,14 +7,14 @@ import fastplotlib as fpl
 from ipywidgets import IntSlider, Checkbox, VBox, HTML
 
 class ppgExtractor:
-    def __init__(self, 
-                 signal: np.ndarray, 
-                 fs: float, 
-                 hr: float, 
-                 sigma: float, 
-                 L: int, 
+    def __init__(self,
+                 signal: np.ndarray,
+                 fs: float,
+                 hr: float,
+                 sigma: float,
+                 L: int,
                  basis_type: str,
-                 ode_solver: str = "rk3", 
+                 solver: str = "rk3",
                  cost_metrics: list = ["mse", "corr"],
                  cost_func = None):
         """
@@ -25,7 +25,7 @@ class ppgExtractor:
         :param sigma: Standard Deviation in HR
         :param L: Number of Basis Functions
         :param basis_type: Basis function (gaussian, gamma, or skewed-gaussian)
-        :param ode_solver: method of ODE solving (generally an n-th order RK method)
+        :param solver: method of ODE solving (generally an n-th order RK method)
         :param cost_metrics: cost metrics to be added to objective func
         :param cost_func: cost function to be added to objective func
         """
@@ -33,7 +33,7 @@ class ppgExtractor:
         self.fs = fs
         self.basis_type = basis_type
         self.L = L
-        self.ode_solver = ode_solver
+        self.solver = solver
 
         # cost‐function flags
         self.cost_metrics = cost_metrics
@@ -65,13 +65,13 @@ class ppgExtractor:
         params_new = x[self.L:].reshape((self.L, P))
 
         # simulate
-        model_ppg = unified_model_ode(ppinterval=self.pp_interval,
-                                     fs=self.fs,
-                                     seconds=self.rr_interval,
-                                     basis_type=self.basis_type,
-                                     thetai=theta_new,
-                                     basis_params=params_new,
-                                     ode_solver=self.ode_solver)
+        model_ppg = unified_model(ppinterval=self.pp_interval,
+                                      fs=self.fs,
+                                      seconds=self.rr_interval,
+                                      basis_type=self.basis_type,
+                                      thetai=theta_new,
+                                      basis_params=params_new,
+                                      solver=self.solver)
 
         # scalar cost
         return objective_function(model=model_ppg,
@@ -130,13 +130,11 @@ class ppgExtractor:
                     block_bounds = [self.bounds[i]] + self.bounds[self.L + i * P: self.L + (i + 1) * P]
 
                     # Local optimize for block
-                    res = minimize(
-                        fun=block_cost,
-                        x0=xi0,
-                        bounds=block_bounds,
-                        method='SLSQP',
-                        options={'maxiter': 300, 'ftol': 1e-6}
-                    )
+                    res = minimize(fun=block_cost,
+                                   x0=xi0,
+                                   bounds=block_bounds,
+                                   method='SLSQP',
+                                   options={'maxiter': 300, 'ftol': 1e-6})
 
                     # Update parameters
                     theta_phase2[i] = res.x[0]
@@ -187,19 +185,15 @@ class ppgExtractor:
                                 vec.append(p4 if p4 is not None else defaults[3])
                             params[basis_index] = vec
 
-                            model_ppg = unified_model_ode(
-                                ppinterval=self.pp_interval,
-                                fs=self.fs,
-                                seconds=self.rr_interval,
-                                basis_type=self.basis_type,
-                                thetai=thetai,
-                                basis_params=params,
-                                ode_solver=self.ode_solver
-                            )
-                            cost_val = objective_function(
-                                model_ppg, self.signal,
-                                cost_metrics = self.cost_metrics
-                            )
+                            model_ppg = unified_model(ppinterval=self.pp_interval,
+                                                      fs=self.fs,
+                                                      seconds=self.rr_interval,
+                                                      basis_type=self.basis_type,
+                                                      thetai=thetai,
+                                                      basis_params=params,
+                                                      solver=self.solver)
+                            cost_val = objective_function(model_ppg, self.signal,
+                                                          cost_metrics = self.cost_metrics)
 
                             X.append(θ)
                             Y.append(p1)
