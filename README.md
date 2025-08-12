@@ -44,6 +44,9 @@ The package will now be available for import and use in your project.
 * Refer to `custom_cost_func.ipynb` for examples of passing a custom cost function to the `ppgExtractor`.
 * Refer to `_____.ipynb` for examples using experimental data to extract the AC/DC/HC components and reconstruct the AC component.
 
+![Parameter Extraction and Reconstruction](<img\parameter extraction and reconstruction.png>)
+**Fig 3b**: Parameter extraction and reconstruction using the three in-built kernels on input experimental data 
+
 ### Profiling
 
 * To run profiling, execute:
