@@ -3,7 +3,7 @@ from numba import njit
 from ppg_basis.utils.math_utils import *
 from scipy.optimize import LinearConstraint
 from scipy.signal import detrend
-from ppg_basis.utils.math_utils import _interp1d_lut_scalar
+from ppg_basis.utils.math_utils import _interp1d_lut_scalar, _wrap_pi, _interp_uniform_table
 
 @njit
 def basis_function(theta_diff: float, basis_type: str, params):
@@ -30,9 +30,6 @@ def basis_function(theta_diff: float, basis_type: str, params):
     else:
         raise ValueError(f"Unsupported basis type: {basis_type}")
 
-@njit(cache=True)
-def _wrap_pi(x):
-    return ((x + np.pi) % (2 * np.pi)) - np.pi
 
 @njit(cache=True)
 def _phase_from_rr(ppinterval, fs, n_samples):
@@ -172,6 +169,121 @@ def _synthesize_gaussian_core(theta, thetai, basis_params):
             z[k] += amp * np.exp(- (diff * diff) * inv2b2)
     return z
 
+def _build_phase_template_gaussian(thetai, basis_params, M):
+    phi = np.linspace(0.0, 2.0*np.pi, M, endpoint=False)
+    z_grid = np.zeros(M, dtype=np.float64)
+    for i in range(thetai.size):
+        a = basis_params[i, 0]
+        b = max(basis_params[i, 1], 1e-6)
+        amp = a * b * b
+        diff = ((phi - (thetai[i] + np.pi)) % (2.0*np.pi)) - np.pi  # wrap to [-π,π]
+        z_grid += amp * np.exp(-0.5 * (diff / b)**2)
+    # optional: detrend/normalize here only if you want the template normalized;
+    # otherwise do it after sampling to match your current pipeline.
+    return z_grid
+
+def _build_phase_template_generic(basis_type, thetai, basis_params, M):
+    # use your zero-mean primitives G_i(·) on [0,2π] and roll them
+    x_table = np.linspace(0.0, 2.0*np.pi, M, endpoint=False)
+    _, G_lut = _precompute_f_and_G(np.ascontiguousarray(basis_params), basis_type, M)
+    z_grid = np.zeros(M, dtype=np.float64)
+    for i in range(thetai.size):
+        a = basis_params[i, 0]
+        # map θ_i to a circular shift
+        shift = int(np.round((thetai[i] + np.pi) * M / (2.0*np.pi))) % M
+        # roll primitive and scale
+        z_grid -= a * np.roll(G_lut[i], shift)
+    return z_grid
+
+def build_phase_template(basis_type, thetai, basis_params, M=1024):
+    if basis_type == 'gaussian':
+        return _build_phase_template_gaussian(thetai, np.asarray(basis_params), M)
+    else:
+        return _build_phase_template_generic(basis_type, thetai, np.asarray(basis_params), M)
+
+@njit(cache=True)
+def sample_template(theta, z_grid):
+    n = theta.size
+    out = np.empty(n, dtype=np.float64)
+    for k in range(n):
+        out[k] = _interp_uniform_table(theta[k], z_grid)
+    return out
+
+def _tabulate_zero_mean_derivative(basis_type, basis_params, M):
+    # returns g_grid on [0,2π): zero-mean derivative basis (unit amplitude)
+    phi = np.linspace(0.0, 2.0*np.pi, M, endpoint=False)
+    g = np.zeros(M, dtype=np.float64)
+
+    if basis_type == 'gaussian':
+        # derivative of Gaussian primitive: f(φ) = φ * exp(-φ^2/(2b^2))  (unit a)
+        # We choose b from first basis to define shape; for multi-b, use average or build per-b and average.
+        # Better: average shapes weighted by a_i/normalize — but a simple choice works well.
+        # Here we construct an average 'g' by averaging unit-amplitude shapes across bases.
+        L = basis_params.shape[0]
+        acc = np.zeros(M)
+        for i in range(L):
+            b = max(basis_params[i,1], 1e-6)
+            x = ((phi - np.pi) )  # center at 0
+            acc += x * np.exp(-0.5*(x/b)**2)
+        g = acc / max(L,1)
+        g -= g.mean()
+        return g
+
+    elif basis_type in ('gamma','skewed-gaussian'):
+        # Use your existing LUT machinery per-basis and average
+        x_table = np.linspace(0.0, 2.0*np.pi, M, endpoint=False)
+        f_lut = np.zeros(M)
+        L = basis_params.shape[0]
+        for i in range(L):
+            if basis_type == 'gamma':
+                alpha, scale = basis_params[i,1], basis_params[i,2]
+                for j in range(M):
+                    f_lut[j] += gamma_pdf(x_table[j], alpha, scale)
+            else:
+                b, skew = basis_params[i,1], basis_params[i,2]
+                for j in range(M):
+                    x = x_table[j] - np.pi
+                    f_lut[j] += 2.0 * x * norm_pdf(x, b) * norm_cdf(skew * x / b)
+        g = f_lut / max(L,1)
+        g -= g.mean()
+        return g
+    else:
+        raise ValueError("Unsupported basis type")
+
+def _primitive_coeffs_from_derivative_fft(g):
+    # FFT-based primitive coefficients: G_k = F_k / (ik), k≠0, G_0=0
+    G = np.fft.fft(g)
+    M = g.size
+    k = np.fft.fftfreq(M, d=1.0) * M  # integer indices (0 .. M-1 mapped symmetrically)
+    G_new = np.zeros_like(G, dtype=np.complex128)
+    for idx in range(M):
+        kk = k[idx]
+        if kk != 0:
+            G_new[idx] = G[idx] / (1j * kk)
+        else:
+            G_new[idx] = 0.0
+    return G_new
+
+def _impulse_train_coeffs(thetai, basis_params, M):
+    # \hat s_k = sum_i a_i e^{-i k θ_i}  for k = 0..M-1 (DFT ordering)
+    k = np.fft.fftfreq(M, d=1.0) * M  # integer freq indices
+    S = np.zeros(M, dtype=np.complex128)
+    for i in range(thetai.size):
+        a = basis_params[i,0]
+        S += a * np.exp(-1j * k * thetai[i])
+    return S
+
+def build_phase_template_fft(basis_type, thetai, basis_params, M=1024):
+    # 1) derivative tabulation and primitive coeffs
+    g = _tabulate_zero_mean_derivative(basis_type, np.asarray(basis_params), M)
+    Gk = _primitive_coeffs_from_derivative_fft(g)
+    # 2) impulse train coeffs
+    Sk = _impulse_train_coeffs(thetai, np.asarray(basis_params), M)
+    # 3) multiply in frequency and IFFT
+    Zk = - Gk * Sk
+    z_grid = np.fft.ifft(Zk).real
+    return z_grid
+
 
 @njit(cache=True)
 def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type, mean_vals, x_table, lut_vals):
@@ -275,6 +387,33 @@ def rk4_integration(y0, tspan, rr, fs, thetai, basis_params, basis_type, mean_va
         y[i] = y[i - 1] + (dt / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
     return y
 
+def unified_model_fft(ppinterval, fs, seconds, basis_type, thetai, basis_params, M=1024):
+    n_samples = int(np.ceil(seconds * fs))
+    _, _, theta = _phase_from_rr(ppinterval, fs, n_samples)
+
+    z_grid = build_phase_template_fft(basis_type, thetai, np.asarray(basis_params), M=M)
+    z = sample_template(theta, z_grid)
+
+    z = np.nan_to_num(z, nan=0.0, posinf=0.0, neginf=0.0)
+    z = detrend(z)
+    z -= np.mean(z)
+    z = (z - np.min(z)) / (np.max(z) - np.min(z) + 1e-8)
+    return z
+
+def unified_model_template(ppinterval, fs, seconds, basis_type, thetai, basis_params, M=1024):
+    n_samples = int(np.ceil(seconds * fs))
+    _, _, theta = _phase_from_rr(ppinterval, fs, n_samples)
+
+    z_grid = build_phase_template(basis_type, thetai, np.asarray(basis_params), M=M)
+    z = sample_template(theta, z_grid)
+
+    # same post as your other paths
+    z = np.nan_to_num(z, nan=0.0, posinf=0.0, neginf=0.0)
+    z = detrend(z)
+    z -= np.mean(z)
+    z = (z - np.min(z)) / (np.max(z) - np.min(z) + 1e-8)
+    return z
+
 def unified_model_basis(ppinterval, fs, seconds, basis_type, thetai, basis_params):
     """
     Generate z(t) directly from basis primitives:
@@ -358,8 +497,12 @@ def unified_model(ppinterval, fs, seconds, basis_type, thetai, basis_params, sol
     """
     if solver == "basis":
         return unified_model_basis(ppinterval, fs, seconds, basis_type, thetai, basis_params)
-    # fall back to ODE route
-    return unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params, solver)
+    elif solver == 'template':
+        return unified_model_template(ppinterval, fs, seconds, basis_type, thetai, basis_params, M=512)
+    elif solver == "fft":
+        return unified_model_fft(ppinterval, fs, seconds, basis_type, thetai, basis_params, M=512)
+    else:
+        return unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params, solver)
 
 
 def generate_basis_parameters(L, basis_type, random_state=None):

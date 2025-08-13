@@ -2,6 +2,19 @@ import numpy as np
 from numba import njit, prange
 import math
 
+
+@njit(cache=True)
+def _wrap_pi(x):
+    return ((x + np.pi) % (2 * np.pi)) - np.pi
+
+@njit(cache=True)
+def _theta_to_index(theta, M):
+    # map θ∈[-π,π] → index in [0, M)
+    u = (theta + np.pi) * (M / (2.0*np.pi))
+    j = int(np.floor(u)) % M
+    frac = u - np.floor(u)
+    return j, frac  # for linear interp between j and j+1
+
 @njit(cache=True)
 def corrcoef_numba(x, y):
     """
@@ -181,3 +194,11 @@ def _interp1d_lut_scalar(x, x_table, y_table):
     x0 = idx * dx
     t = (x - x0) / dx
     return (1.0 - t) * y_table[idx] + t * y_table[idx + 1]
+
+@njit(cache=True)
+def _interp_uniform_table(theta, z_grid):
+    # scalar interpolation of a uniform 2π-periodic table
+    M = z_grid.shape[0]
+    j, frac = _theta_to_index(theta, M)
+    j2 = (j + 1) % M
+    return (1.0 - frac) * z_grid[j] + frac * z_grid[j2]
