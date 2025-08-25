@@ -87,7 +87,7 @@ def precompute_mean_basis_values(basis_params, basis_type, M, x_table):
 def _precompute_f_and_G(basis_params, basis_type, M):
     """
     Build LUTs for f(θ) with unit amplitude (a=1), and its primitive
-    G(θ)=∫_0^θ (f(u)-mean) du on a uniform grid in [0, 2π].
+    G(θ)=∫_0^θ (f(u)-mean)du on a uniform grid in [0, 2π].
     Subtracting mean enforces periodicity (no drift over a cycle).
     """
     L = basis_params.shape[0]
@@ -97,7 +97,6 @@ def _precompute_f_and_G(basis_params, basis_type, M):
 
     for i in range(L):
         if basis_type == 'gaussian':
-            # f(x)=x*exp(-x^2/(2 b^2)), on x in [-π, π]
             b = basis_params[i, 1]
             bb = max(b, 1e-6)
             inv2b2 = 1.0/(2.0*bb*bb)
@@ -133,7 +132,7 @@ def _precompute_f_and_G(basis_params, basis_type, M):
             dx = x_table[j] - x_table[j-1]
             acc += 0.5*(f_lut[i, j-1] + f_lut[i, j]) * dx
             G_lut[i, j] = acc
-        # remove tiny residual slope to force exact periodicity
+        # remove tiny residual slope to enforce periodicity
         slope = G_lut[i, -1] / (2.0*np.pi)
         for j in prange(M):
             G_lut[i, j] -= slope * x_table[j]
@@ -145,7 +144,7 @@ def _synthesize_basis_core(theta, thetai, basis_params, x_table, G_lut):
     n = theta.size
     L = thetai.size
     z = np.zeros(n)
-    for i in range(L):  # parallel over bases
+    for i in range(L):
         a = basis_params[i, 0]
         for k in range(n):
             # wrap to [-π, π], then shift to [0, 2π] for LUT
@@ -159,7 +158,7 @@ def _synthesize_gaussian_core(theta, thetai, basis_params):
     n = theta.size
     L = thetai.size
     z = np.zeros(n)
-    for i in range(L):              # parallelize across bases
+    for i in range(L):
         a = basis_params[i, 0]
         b = max(basis_params[i, 1], 1e-6)
         inv2b2 = 1.0 / (2.0 * b * b)
@@ -178,12 +177,9 @@ def _build_phase_template_gaussian(thetai, basis_params, M):
         amp = a * b * b
         diff = ((phi - (thetai[i] + np.pi)) % (2.0*np.pi)) - np.pi  # wrap to [-π,π]
         z_grid += amp * np.exp(-0.5 * (diff / b)**2)
-    # optional: detrend/normalize here only if you want the template normalized;
-    # otherwise do it after sampling to match your current pipeline.
     return z_grid
 
 def _build_phase_template_generic(basis_type, thetai, basis_params, M):
-    # use your zero-mean primitives G_i(·) on [0,2π] and roll them
     x_table = np.linspace(0.0, 2.0*np.pi, M, endpoint=False)
     _, G_lut = _precompute_f_and_G(np.ascontiguousarray(basis_params), basis_type, M)
     z_grid = np.zeros(M, dtype=np.float64)
@@ -215,22 +211,17 @@ def _tabulate_zero_mean_derivative(basis_type, basis_params, M):
     g = np.zeros(M, dtype=np.float64)
 
     if basis_type == 'gaussian':
-        # derivative of Gaussian primitive: f(φ) = φ * exp(-φ^2/(2b^2))  (unit a)
-        # We choose b from first basis to define shape; for multi-b, use average or build per-b and average.
-        # Better: average shapes weighted by a_i/normalize — but a simple choice works well.
-        # Here we construct an average 'g' by averaging unit-amplitude shapes across bases.
         L = basis_params.shape[0]
         acc = np.zeros(M)
         for i in range(L):
             b = max(basis_params[i,1], 1e-6)
-            x = ((phi - np.pi) )  # center at 0
+            x = ((phi - np.pi) )
             acc += x * np.exp(-0.5*(x/b)**2)
         g = acc / max(L,1)
         g -= g.mean()
         return g
 
     elif basis_type in ('gamma','skewed-gaussian'):
-        # Use your existing LUT machinery per-basis and average
         x_table = np.linspace(0.0, 2.0*np.pi, M, endpoint=False)
         f_lut = np.zeros(M)
         L = basis_params.shape[0]
@@ -254,7 +245,7 @@ def _primitive_coeffs_from_derivative_fft(g):
     # FFT-based primitive coefficients: G_k = F_k / (ik), k≠0, G_0=0
     G = np.fft.fft(g)
     M = g.size
-    k = np.fft.fftfreq(M, d=1.0) * M  # integer indices (0 .. M-1 mapped symmetrically)
+    k = np.fft.fftfreq(M, d=1.0) * M
     G_new = np.zeros_like(G, dtype=np.complex128)
     for idx in range(M):
         kk = k[idx]
@@ -265,8 +256,7 @@ def _primitive_coeffs_from_derivative_fft(g):
     return G_new
 
 def _impulse_train_coeffs(thetai, basis_params, M):
-    # \hat s_k = sum_i a_i e^{-i k θ_i}  for k = 0..M-1 (DFT ordering)
-    k = np.fft.fftfreq(M, d=1.0) * M  # integer freq indices
+    k = np.fft.fftfreq(M, d=1.0) * M
     S = np.zeros(M, dtype=np.complex128)
     for i in range(thetai.size):
         a = basis_params[i,0]
@@ -274,12 +264,9 @@ def _impulse_train_coeffs(thetai, basis_params, M):
     return S
 
 def build_phase_template_fft(basis_type, thetai, basis_params, M=1024):
-    # 1) derivative tabulation and primitive coeffs
     g = _tabulate_zero_mean_derivative(basis_type, np.asarray(basis_params), M)
     Gk = _primitive_coeffs_from_derivative_fft(g)
-    # 2) impulse train coeffs
     Sk = _impulse_train_coeffs(thetai, np.asarray(basis_params), M)
-    # 3) multiply in frequency and IFFT
     Zk = - Gk * Sk
     z_grid = np.fft.ifft(Zk).real
     return z_grid
@@ -406,8 +393,6 @@ def unified_model_template(ppinterval, fs, seconds, basis_type, thetai, basis_pa
 
     z_grid = build_phase_template(basis_type, thetai, np.asarray(basis_params), M=M)
     z = sample_template(theta, z_grid)
-
-    # same post as your other paths
     z = np.nan_to_num(z, nan=0.0, posinf=0.0, neginf=0.0)
     z = detrend(z)
     z -= np.mean(z)
@@ -430,11 +415,8 @@ def unified_model_basis(ppinterval, fs, seconds, basis_type, thetai, basis_param
         M = 500
         x_table = np.linspace(0.0, 2.0*np.pi, M)  # keep a python copy for numba signature
         _, G_lut = _precompute_f_and_G(np.array(basis_params), basis_type, M)
-
-        # synthesize
         z = _synthesize_basis_core(theta, thetai, np.array(basis_params), x_table, G_lut)
 
-    # same post as ODE path
     z = np.nan_to_num(z, nan=0.0, posinf=0.0, neginf=0.0)
     z = detrend(z)
     z -= np.mean(z)
@@ -544,29 +526,21 @@ def get_bounds_and_constraints(L, basis_type):
     :param basis_type: basis function
     :return: bounds and constraints
     """
-    # 1) Theta bounds
     theta_bounds = [(-np.pi, np.pi)] * L
 
-    # 2) Parameter bounds by basis type
     if basis_type == 'gaussian':
-        # each basis has (a, b)
         param_bnds = [(0.0, 1.0), (0.05, 3.0)]
     elif basis_type == 'gamma':
-        # each basis has (a, alpha, scale)
         param_bnds = [(0.0, 1.0), (1.0, 6.0), (0.05, 3.0)]
     elif basis_type == 'skewed-gaussian':
-        # each basis has (a, b, skew)
         param_bnds = [(0.0, 1.0), (0.05, 3.0), (-10.0, 10.0)]
     else:
         raise ValueError(f"Unsupported basis type: {basis_type}")
 
     # replicate for L bases
     param_bounds = param_bnds * L
-
-    # combine into one list: [θ-bounds…, param-bounds…]
     bounds = theta_bounds + param_bounds
 
-    # 3) Build θ-ordering constraint
     if L > 1:
         n = len(bounds)
         A = np.zeros((L - 1, n))
