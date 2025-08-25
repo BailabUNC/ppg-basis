@@ -2,16 +2,16 @@ from ppg_basis import model
 from ppg_basis.utils.ppg_utils import pp_interval_generator
 
 class ppgGenerator():
-    def __init__(self, 
-                 fs, 
-                 hr, 
-                 mu, 
-                 sigma, 
-                 duration, 
-                 L, 
-                 basis_type, 
-                 ode_solver: str = "rk3", 
-                 thetas=None, 
+    def __init__(self,
+                 fs,
+                 hr,
+                 mu,
+                 sigma,
+                 duration,
+                 L,
+                 basis_type,
+                 solver: str = "rk3",
+                 thetas=None,
                  params=None):
         """
         Constructor for Generator Class
@@ -22,7 +22,7 @@ class ppgGenerator():
         :param duration: total time of PPG window
         :param L: Number of Basis Functions
         :param basis_type: Basis function (gaussian, gamma, or skewed-gaussian)
-        :param ode_solver: method of ODE solving (generally an n-th order RK method)
+        :param solver: method of ODE solving (generally an n-th order RK method)
         :param thetas: phase location in PPG period
         :param params: basis parameter list
         """
@@ -33,7 +33,7 @@ class ppgGenerator():
         self.duration = duration
         self.L = L
         self.basis_type = basis_type
-        self.ode_solver = ode_solver
+        self.solver = solver
 
         if thetas is None or params is None:
             self.thetai, self.params = model.generate_basis_parameters(L=self.L,
@@ -52,11 +52,11 @@ class ppgGenerator():
         Generates PPG signal
         :return: z(t)
         """
-        self.signal = model.unified_model_ode(ppinterval=self.ppinterval,
-                                              fs=self.fs,
-                                              seconds=self.duration,
-                                              basis_type=self.basis_type,
-                                              thetai=self.thetai,
-                                              basis_params=self.params,
-                                              ode_solver=self.ode_solver)
+        self.signal = model.unified_model(ppinterval=self.ppinterval,
+                                          fs=self.fs,
+                                          seconds=self.duration,
+                                          basis_type=self.basis_type,
+                                          thetai=self.thetai,
+                                          basis_params=self.params,
+                                          solver=self.solver)
         return self.signal

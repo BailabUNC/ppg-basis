@@ -2,7 +2,20 @@ import numpy as np
 from numba import njit, prange
 import math
 
-@njit
+
+@njit(cache=True)
+def _wrap_pi(x):
+    return ((x + np.pi) % (2 * np.pi)) - np.pi
+
+@njit(cache=True)
+def _theta_to_index(theta, M):
+    # map θ∈[-π,π] → index in [0, M)
+    u = (theta + np.pi) * (M / (2.0*np.pi))
+    j = int(np.floor(u)) % M
+    frac = u - np.floor(u)
+    return j, frac  # for linear interp between j and j+1
+
+@njit(cache=True)
 def corrcoef_numba(x, y):
     """
     Calculate Pearson's Correlation Coefficient (r)
@@ -17,7 +30,7 @@ def corrcoef_numba(x, y):
     std_y = np.std(y)
     return cov / (std_x * std_y + 1e-8)
 
-@njit
+@njit(cache=True)
 def gaussian_kernel1d(sigma, radius=3):
     """
     Generate a 1D Gaussian Kernel
@@ -31,7 +44,7 @@ def gaussian_kernel1d(sigma, radius=3):
     kernel /= kernel.sum()
     return kernel
 
-@njit
+@njit(cache=True)
 def gaussian_filter1d_numba(arr, sigma):
     """
     Apply 1D Gaussian filter to array
@@ -43,7 +56,7 @@ def gaussian_filter1d_numba(arr, sigma):
     kernel = gaussian_kernel1d(sigma, radius)
     output = np.zeros_like(arr)
 
-    for i in range(len(arr)):
+    for i in prange(len(arr)):
         acc = 0.0
         for j in range(-radius, radius + 1):
             idx = i + j
@@ -52,7 +65,7 @@ def gaussian_filter1d_numba(arr, sigma):
         output[i] = acc
     return output
 
-@njit
+@njit(cache=True)
 def gradient_1d(arr, dx=1.0):
     """
     Compute the gradient of a 1D array
@@ -64,7 +77,7 @@ def gradient_1d(arr, dx=1.0):
     grad = np.empty(n, dtype=arr.dtype)
 
     # Central differences
-    for i in range(1, n - 1):
+    for i in prange(1, n - 1):
         grad[i] = (arr[i + 1] - arr[i - 1]) / (2 * dx)
 
     # Forward/backward difference at boundaries
@@ -72,7 +85,7 @@ def gradient_1d(arr, dx=1.0):
     grad[-1] = (arr[-1] - arr[-2]) / dx
     return grad
 
-@njit
+@njit(cache=True)
 def gamma_pdf(x, alpha, scale):
     """
     Compute PDF of gamma func at a given point
@@ -88,7 +101,7 @@ def gamma_pdf(x, alpha, scale):
                     - math.lgamma(alpha)
                     - alpha*math.log(scale))
 
-@njit
+@njit(cache=True)
 def norm_pdf(x, b):
     """
     Compute PDF of normal distribution at given point
@@ -98,7 +111,7 @@ def norm_pdf(x, b):
     """
     return math.exp(-0.5*(x/b)**2) / (math.sqrt(2*math.pi) * b)
 
-@njit
+@njit(cache=True)
 def norm_cdf(x):
     """
     Compute CDF of normal distribution at given point
@@ -107,7 +120,7 @@ def norm_cdf(x):
     """
     return 0.5 * (1.0 + math.erf(x/math.sqrt(2.0)))
 
-@njit
+@njit(cache=True)
 def gamma_mean(alpha, scale, M):
     """
     Approximate mean of gamma distribution over 2pi
@@ -123,7 +136,7 @@ def gamma_mean(alpha, scale, M):
         mean_val += gamma_pdf(j0, alpha, scale)
     return mean_val * d0 / (2 * np.pi)
 
-@njit
+@njit(cache=True)
 def skewed_gaussian_mean(b, skew, M):
     """
     Approximate mean of skewed Gaussian distribution over -pi to pi
@@ -139,7 +152,7 @@ def skewed_gaussian_mean(b, skew, M):
         mean_val += 2 * j0 * norm_pdf(j0, b) * norm_cdf(skew * j0 / b)
     return mean_val * d0 / (2 * np.pi)
 
-@njit
+@njit(cache=True)
 def interp1d_lut(x, x_table, y_table):
     """
     Perform 1D linear interpolation using lookup tables
@@ -152,9 +165,40 @@ def interp1d_lut(x, x_table, y_table):
         return y_table[0]
     elif x >= x_table[-1]:
         return y_table[-1]
-    for i in prange(len(x_table) - 1):
+    for i in range(len(x_table) - 1):
         if x_table[i] <= x <= x_table[i + 1]:
             dx = x_table[i + 1] - x_table[i]
             dy = y_table[i + 1] - y_table[i]
             return y_table[i] + (x - x_table[i]) * dy / dx
     return 0.0
+
+@njit(cache=True)
+def _interp1d_lut_scalar(x, x_table, y_table):
+    """
+    linear interpolation for scalars. Assumes x_table is uniform over [0, 2π].
+    :param x: input value
+    :param x_table: sorted x-values
+    :param y_table: corresponding y-values
+    :return: interpolated estimate of y = f(x)
+    """
+    M = x_table.shape[0]
+    dx = x_table[1] - x_table[0]
+    # clamp x into [0, 2π]
+    if x < 0.0:
+        x = 0.0
+    elif x > 2.0*np.pi:
+        x = 2.0*np.pi
+    idx = int(x / dx)
+    if idx >= M-1:
+        idx = M-2
+    x0 = idx * dx
+    t = (x - x0) / dx
+    return (1.0 - t) * y_table[idx] + t * y_table[idx + 1]
+
+@njit(cache=True)
+def _interp_uniform_table(theta, z_grid):
+    # scalar interpolation of a uniform 2π-periodic table
+    M = z_grid.shape[0]
+    j, frac = _theta_to_index(theta, M)
+    j2 = (j + 1) % M
+    return (1.0 - frac) * z_grid[j] + frac * z_grid[j2]
