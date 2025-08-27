@@ -1,4 +1,4 @@
-from model_utils import _phase_from_rr, _precompute_f_and_G
+from ppg_basis.model.solver_utils import _phase_from_rr, _precompute_f_and_G
 from ppg_basis.utils.math_utils import _wrap_pi, _interp1d_lut_scalar
 import numpy as np
 from scipy.signal import detrend
