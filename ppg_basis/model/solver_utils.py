@@ -3,7 +3,7 @@ from ppg_basis.utils.math_utils import _wrap_pi, gamma_pdf, norm_pdf, norm_cdf, 
 from numba import njit, prange
 
 @njit(cache=True)
-def _phase_from_rr(ppinterval, fs, n_samples):
+def _phase_from_rr(ppinterval, fs, n_samples): # FIXME: This function's only used return value is theta, do we need to return rr and omega?
     """
     Construct per-sample RR, ω=2π/RR, and phase θ[n] that wraps in [-π, π]
     """

@@ -16,7 +16,7 @@ def unified_model_template(ppinterval, fs, seconds, basis_type, thetai, basis_pa
 
 def build_phase_template(basis_type, thetai, basis_params, M=1024):
     if basis_type == 'gaussian':
-        return _build_phase_template_gaussian(thetai, np.asarray(basis_params), M)
+        return _build_phase_template_gaussian(thetai, np.asarray(basis_params), M) # FIXME: Is there any utility in condensing these three functions into one build_phase_template function?
     else:
         return _build_phase_template_generic(basis_type, thetai, np.asarray(basis_params), M)
     
