@@ -3,6 +3,7 @@ from ppg_basis.utils.math_utils import _wrap_pi, _interp1d_lut_scalar
 import numpy as np
 from scipy.signal import detrend
 from numba import njit
+from ppg_constants import default_M
 
 def unified_model_basis(ppinterval, fs, seconds, basis_type, thetai, basis_params):
     """
@@ -11,13 +12,13 @@ def unified_model_basis(ppinterval, fs, seconds, basis_type, thetai, basis_param
     """
     n_samples = int(np.ceil(seconds * fs))
     # phase trajectory from RR
-    _, _, theta = _phase_from_rr(ppinterval, fs, n_samples)
+    _, theta = _phase_from_rr(ppinterval, fs, n_samples)
 
     if basis_type == 'gaussian':
         z = _synthesize_gaussian_core(theta, thetai, np.array(basis_params))
     else:
+        M = default_M
         # precompute primitive LUTs for each basis (unit amplitude)
-        M = 500
         x_table = np.linspace(0.0, 2.0*np.pi, M)  # keep a python copy for numba signature
         _, G_lut = _precompute_f_and_G(np.array(basis_params), basis_type, M)
         z = _synthesize_basis_core(theta, thetai, np.array(basis_params), x_table, G_lut)

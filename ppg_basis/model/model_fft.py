@@ -3,11 +3,11 @@ from scipy.signal import detrend
 from ppg_basis.model.solver_utils import _phase_from_rr, sample_template
 from ppg_basis.utils.math_utils import gamma_pdf, norm_pdf, norm_cdf
 
-def unified_model_fft(ppinterval, fs, seconds, basis_type, thetai, basis_params, M=1024):
+def unified_model_fft(ppinterval, fs, seconds, basis_type, thetai, basis_params, M):
     n_samples = int(np.ceil(seconds * fs))
-    _, _, theta = _phase_from_rr(ppinterval, fs, n_samples)
+    _, theta = _phase_from_rr(ppinterval, fs, n_samples)
 
-    z_grid = build_phase_template_fft(basis_type, thetai, np.asarray(basis_params), M=M)
+    z_grid = build_phase_template_fft(basis_type, thetai, np.asarray(basis_params), M)
     z = sample_template(theta, z_grid)
 
     z = np.nan_to_num(z, nan=0.0, posinf=0.0, neginf=0.0)
@@ -16,7 +16,7 @@ def unified_model_fft(ppinterval, fs, seconds, basis_type, thetai, basis_params,
     z = (z - np.min(z)) / (np.max(z) - np.min(z) + 1e-8)
     return z
 
-def build_phase_template_fft(basis_type, thetai, basis_params, M=1024):
+def build_phase_template_fft(basis_type, thetai, basis_params, M):
     g = _tabulate_zero_mean_derivative(basis_type, np.asarray(basis_params), M)
     Gk = _primitive_coeffs_from_derivative_fft(g)
     Sk = _impulse_train_coeffs(thetai, np.asarray(basis_params), M)
