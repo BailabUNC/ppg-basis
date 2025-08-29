@@ -11,6 +11,8 @@ param_bnds_dict = {
 
 basis_types = ['gaussian', 'gamma', 'skewed-gaussian']
 
+default_solver = "basis"
+
 # default parameters
 default_params = {
 
@@ -20,7 +22,7 @@ default_params = {
     "L" : 2,
     "mu" : 1,
     "sigma" : 0,
-    "solver" : "rk4",
+    "solver" : default_solver,
 
     # extractor-specific parameters
     "cost_metrics" : ["mse", "corr"],
