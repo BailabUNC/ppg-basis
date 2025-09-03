@@ -1,4 +1,3 @@
-from typing import Callable
 import warnings
 import numpy as np
 from scipy.optimize import LinearConstraint

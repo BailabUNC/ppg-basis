@@ -5,7 +5,6 @@ from ppg_basis.utils.ppg_utils import *
 from ppg_basis.cost import objective_function
 import fastplotlib as fpl
 from ipywidgets import IntSlider, Checkbox, VBox, HTML
-from ppg_constants import default_params
 
 class ppgExtractor:
     def __init__(self,
