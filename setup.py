@@ -7,7 +7,9 @@ install_requires = [
     'numba',
     'scipy',
     'fastplotlib',
-    'ipywidgets'
+    'ipywidgets',
+    'warnings',
+    'typing'
 ]
 
 setup(

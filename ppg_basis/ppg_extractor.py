@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.optimize import differential_evolution, minimize
+from ppg_basis.model.unified_solver import unified_model
 from ppg_basis.utils.ppg_utils import *
-from ppg_basis.model import *
 from ppg_basis.cost import objective_function
 import fastplotlib as fpl
 from ipywidgets import IntSlider, Checkbox, VBox, HTML
@@ -14,9 +14,9 @@ class ppgExtractor:
                  sigma: float,
                  L: int,
                  basis_type: str,
-                 solver: str = "rk3",
-                 cost_metrics: list = ["mse", "corr"],
-                 cost_func = None):
+                 solver: str,
+                 cost_metrics: list,
+                 cost_func: callable):
         """
         Constructor for Extractor Class
         :param signal: Input signal to analyze
@@ -29,30 +29,33 @@ class ppgExtractor:
         :param cost_metrics: cost metrics to be added to objective func
         :param cost_func: cost function to be added to objective func
         """
+        if signal is None or len(signal) > 3:
+            raise ValueError("signal dim cannot exceed 3")
         self.signal = signal
-        self.fs = fs
-        self.basis_type = basis_type
-        self.L = L
-        self.solver = solver
+
+        self.fs = validate_param("fs", fs)
+        self.basis_type = validate_param("basis_type", basis_type)
+        self.L = validate_param("L", L)
+        self.solver = validate_param("solver", solver)
 
         # cost‐function flags
-        self.cost_metrics = cost_metrics
-        self.cost_func = cost_func
+        self.cost_metrics = validate_param("cost_metrics", cost_metrics)
+        self.cost_func = validate_param("cost_func", cost_func)
 
         # build RR‐interval & initial basis
-        self.rr_interval = len(signal) / fs
-        self.pp_interval = pp_interval_generator(time=self.rr_interval,
-                                                 mu=60/hr,
-                                                 sigma=sigma)
-
+        self.rr_interval = len(signal) / self.fs
+        self.pp_interval = pp_interval_generator(time = self.rr_interval,
+                                                 mu = 60 / validate_param("hr", hr),
+                                                 sigma = validate_param("sigma", sigma))
+        
         # random initial thetas & params
-        self.thetai, self.params = generate_basis_parameters(L=L,
-                                                             basis_type=basis_type,
-                                                             random_state=None)
-
+        self.thetai, self.params = generate_basis_parameters(L = self.L,
+                                                             basis_type = self.basis_type,
+                                                             random_state = None)
+        
         # bounds & constraints for flat vector of length = L*P
-        self.bounds, self.constraints = get_bounds_and_constraints(L=L,
-                                                                   basis_type=basis_type)
+        self.bounds, self.constraints = get_bounds_and_constraints(L = self.L,
+                                                                   basis_type = self.basis_type)
 
     def get_cost(self, x: np.ndarray) -> float:
         """

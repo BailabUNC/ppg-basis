@@ -1,5 +1,5 @@
-from ppg_basis import model
-from ppg_basis.utils.ppg_utils import pp_interval_generator
+from ppg_basis.model import unified_solver
+from ppg_basis.utils.ppg_utils import pp_interval_generator, generate_basis_parameters, validate_param
 
 class ppgGenerator():
     def __init__(self,
@@ -26,21 +26,16 @@ class ppgGenerator():
         :param thetas: phase location in PPG period
         :param params: basis parameter list
         """
-        self.fs =fs
-        self.hr = hr
-        self.mu = mu
-        self.sigma = sigma
-        self.duration = duration
-        self.L = L
-        self.basis_type = basis_type
-        self.solver = solver
-
-        if thetas is None or params is None:
-            self.thetai, self.params = model.generate_basis_parameters(L=self.L,
-                                                                       basis_type=self.basis_type)
-        else:
-            self.thetai = thetas
-            self.params = params
+        self.fs = validate_param("fs", fs)
+        self.hr = validate_param("hr", hr)
+        self.mu = validate_param("mu", mu)
+        self.sigma = validate_param("sigma", sigma)
+        self.duration = validate_param("duration", duration)
+        self.L = validate_param("L", L)
+        self.basis_type = validate_param("basis_type", basis_type)
+        self.solver = validate_param("solver", solver)
+        
+        self.thetai, self.params = thetas, params if thetas and params is not None else generate_basis_parameters(L = self.L, basis_type = self.basis_type)
 
         self.ppinterval = pp_interval_generator(time=self.duration,
                                                 mu=self.mu,
@@ -52,11 +47,11 @@ class ppgGenerator():
         Generates PPG signal
         :return: z(t)
         """
-        self.signal = model.unified_model(ppinterval=self.ppinterval,
-                                          fs=self.fs,
-                                          seconds=self.duration,
-                                          basis_type=self.basis_type,
-                                          thetai=self.thetai,
-                                          basis_params=self.params,
-                                          solver=self.solver)
+        self.signal = unified_solver(ppinterval=self.ppinterval,
+                                        fs=self.fs,
+                                        seconds=self.duration,
+                                        basis_type=self.basis_type,
+                                        thetai=self.thetai,
+                                        basis_params=self.params,
+                                        solver=self.solver)
         return self.signal
