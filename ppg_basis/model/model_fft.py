@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.signal import detrend
-from ppg_basis.model.solver_utils import _phase_from_rr, sample_template
+from ppg_basis.utils.solver_utils import _phase_from_rr, sample_template
 from ppg_basis.utils.math_utils import gamma_pdf, norm_pdf, norm_cdf
 
 def unified_model_fft(ppinterval, fs, seconds, basis_type, thetai, basis_params, M):
