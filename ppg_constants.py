@@ -15,7 +15,6 @@ default_solver = "basis"
 
 # default parameters
 default_params = {
-
     # shared parameters
     "fs" : 60,
     "basis_type" : "gaussian",
@@ -30,4 +29,21 @@ default_params = {
     # generator-specific parameters
     "hr" : 60,
     "duration" : 1,
+}
+
+param_validators = {
+    # shared parameters
+    "fs" : lambda x: isinstance(x, int) and x > 0,
+    "basis_type" : lambda x: x in basis_types,
+    "L" : lambda x : isinstance(x, int) and x > 1,
+    "mu" : lambda x: x > 0,
+    "sigma" : lambda x : x > 0,
+    "solver" : lambda x : isinstance(x, str),
+
+    # extractor-specific parameters
+    "cost_metrics" : lambda x : isinstance(x, list) and all(isinstance(metric, str) for metric in x),
+
+    # generator-specific parameters
+    "hr" : lambda x : isinstance(x, int) and x > 0,
+    "duration" : lambda x : x > 0,
 }

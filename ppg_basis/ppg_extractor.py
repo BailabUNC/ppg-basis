@@ -30,17 +30,17 @@ class ppgExtractor:
         :param cost_metrics: cost metrics to be added to objective func
         :param cost_func: cost function to be added to objective func
         """
-        if signal is None or len(signal) not in (2,3):
-            raise ValueError("signal must be length 2 or 3")
+        if signal is None or len(signal) > 3:
+            raise ValueError("signal dim cannot exceed 3")
         self.signal = signal
 
-        self.fs = fs if fs > 0 else default_params["fs"]
-        self.basis_type = basis_type if basis_type in basis_types else default_params["basis_type"]
-        self.L = L if L > 1 else default_params["L"]
-        self.solver = solver if isinstance(solver, str) else default_params["solver"]
+        self.fs = validate_param("fs", fs)
+        self.basis_type = validate_param("basis_type", basis_type)
+        self.L = validate_param("L", L)
+        self.solver = validate_param("solver", solver)
 
         # cost‐function flags
-        self.cost_metrics = cost_metrics if isinstance(cost_metrics, list) else default_params["cost_metrics"]
+        self.cost_metrics = validate_param("cost_metrics", cost_metrics)
         self.cost_func = cost_func # FIXME: Validation needed?
 
         # build RR‐interval & initial basis

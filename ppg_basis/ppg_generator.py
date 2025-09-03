@@ -1,5 +1,5 @@
 from ppg_basis.model import unified_solver
-from ppg_basis.utils.ppg_utils import pp_interval_generator, generate_basis_parameters
+from ppg_basis.utils.ppg_utils import pp_interval_generator, generate_basis_parameters, validate_param
 from ppg_constants import default_params, basis_types
 
 class ppgGenerator():
@@ -27,14 +27,14 @@ class ppgGenerator():
         :param thetas: phase location in PPG period
         :param params: basis parameter list
         """
-        self.fs = fs if fs > 0 else default_params["fs"]
-        self.hr = hr if hr > 0 else default_params["hr"] # FIXME: hr is never accessed
-        self.mu = mu if mu > 0 else default_params["mu"]
-        self.sigma = sigma if sigma > 0 else default_params["sigma"]
-        self.duration = duration if duration > 0 else default_params["duration"]
-        self.L = L if L > 1 else default_params["L"]
-        self.basis_type = basis_type if basis_type in basis_types else default_params["basis_type"]
-        self.solver = solver if isinstance(solver, str) else default_params["solver"]
+        self.fs = validate_param("fs", fs)
+        self.hr = validate_param("hr", hr) # FIXME: hr is never accessed
+        self.mu = validate_param("mu", mu)
+        self.sigma = validate_param("sigma", sigma)
+        self.duration = validate_param("duration", duration)
+        self.L = validate_param("L", L)
+        self.basis_type = validate_param("basis_type", basis_type)
+        self.solver = validate_param("solver", solver)
         
         self.thetai, self.params = thetas, params if thetas and params is not None else generate_basis_parameters(L = self.L, basis_type = self.basis_type)
 
