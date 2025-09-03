@@ -33,7 +33,7 @@ def unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params,
 
     y0 = np.array([-1.0, 0.0, 0.0])
 
-    x_table = np.linspace(0, 2 * np.pi, default_M) # FIXME: Here, we had M = 500 originally, is it okay to replace this with default_M = 1024?
+    x_table = np.linspace(0, 2 * np.pi, default_M)
     mean_vals, lut_vals = precompute_mean_basis_values(np.array(basis_params),
                                                        basis_type, x_table)
 
