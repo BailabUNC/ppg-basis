@@ -5,7 +5,7 @@ from ppg_basis.utils.ppg_utils import *
 from ppg_basis.cost import objective_function
 import fastplotlib as fpl
 from ipywidgets import IntSlider, Checkbox, VBox, HTML
-from ppg_constants import default_params, basis_types
+from ppg_constants import default_params
 
 class ppgExtractor:
     def __init__(self,
@@ -17,7 +17,7 @@ class ppgExtractor:
                  basis_type: str,
                  solver: str,
                  cost_metrics: list,
-                 cost_func = None):
+                 cost_func: callable):
         """
         Constructor for Extractor Class
         :param signal: Input signal to analyze
@@ -41,13 +41,13 @@ class ppgExtractor:
 
         # cost‐function flags
         self.cost_metrics = validate_param("cost_metrics", cost_metrics)
-        self.cost_func = cost_func # FIXME: Validation needed?
+        self.cost_func = validate_param("cost_func", cost_func)
 
         # build RR‐interval & initial basis
         self.rr_interval = len(signal) / self.fs
         self.pp_interval = pp_interval_generator(time = self.rr_interval,
-                                                 mu = 60 / hr if hr > 0 else default_params["mu"],
-                                                 sigma = sigma if sigma > 0 else default_params["sigma"])
+                                                 mu = 60 / validate_param("hr", hr),
+                                                 sigma = validate_param("sigma", sigma))
         
         # random initial thetas & params
         self.thetai, self.params = generate_basis_parameters(L = self.L,

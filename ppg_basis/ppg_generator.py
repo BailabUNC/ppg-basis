@@ -1,6 +1,5 @@
 from ppg_basis.model import unified_solver
 from ppg_basis.utils.ppg_utils import pp_interval_generator, generate_basis_parameters, validate_param
-from ppg_constants import default_params, basis_types
 
 class ppgGenerator():
     def __init__(self,
@@ -28,7 +27,7 @@ class ppgGenerator():
         :param params: basis parameter list
         """
         self.fs = validate_param("fs", fs)
-        self.hr = validate_param("hr", hr) # FIXME: hr is never accessed
+        self.hr = validate_param("hr", hr)
         self.mu = validate_param("mu", mu)
         self.sigma = validate_param("sigma", sigma)
         self.duration = validate_param("duration", duration)

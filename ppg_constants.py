@@ -25,6 +25,7 @@ default_params = {
 
     # extractor-specific parameters
     "cost_metrics" : ["mse", "corr"],
+    "cost_func" : None,
 
     # generator-specific parameters
     "hr" : 60,
@@ -42,6 +43,7 @@ param_validators = {
 
     # extractor-specific parameters
     "cost_metrics" : lambda x : isinstance(x, list) and all(isinstance(metric, str) for metric in x),
+    "cost_func" : lambda x : isinstance(x, callable),
 
     # generator-specific parameters
     "hr" : lambda x : isinstance(x, int) and x > 0,

@@ -6,7 +6,10 @@ from ppg_constants import param_bnds_dict, param_validators, default_params
 
 def validate_param(name, value):
     validator = param_validators.get(name, lambda x: True)
-    return value if validator(value) else default_params[name]
+    if validator(value):
+        return value
+    warnings.warn(f'{name} parameter is invalid ({value}), defaulting to {default_params[name]}', UserWarning)
+    return default_params[name]
 
 def pp_interval_generator(time: float, mu: float = 0, sigma: float = 1):
     """
