@@ -1,6 +1,6 @@
 # Constant values used throughout the codebase
 
-default_M = 1024
+default_M = 512
 
 # used to generate bounds and constraints for optimization
 param_bnds_dict = {

@@ -1,6 +1,7 @@
 import numpy as np
 from ppg_basis.utils.math_utils import _wrap_pi, gamma_pdf, norm_pdf, norm_cdf, _interp_uniform_table
 from numba import njit, prange
+from ppg_constants import default_M
 
 @njit(cache=True)
 def _phase_from_rr(ppinterval, fs, n_samples): # NOTE: let's see if rr can help with other funcs before removing
@@ -27,15 +28,15 @@ def _phase_from_rr(ppinterval, fs, n_samples): # NOTE: let's see if rr can help 
     return rr, theta
 
 @njit(parallel=True, cache=True)
-def _precompute_f_and_G(basis_params, basis_type, M):
+def _precompute_f_and_G(basis_params, basis_type):
     """
     Build LUTs for f(θ) with unit amplitude (a=1), and its primitive
     G(θ)=∫_0^θ (f(u)-mean)du on a uniform grid in [0, 2π].
     Subtracting mean enforces periodicity (no drift over a cycle).
     """
     L = basis_params.shape[0]
-    x_table = np.linspace(0.0, 2.0*np.pi, M)
-    f_lut = np.zeros((L, M))
+    x_table = np.linspace(0.0, 2.0*np.pi, default_M)
+    f_lut = np.zeros((L, default_M))
     mean_vals = np.zeros(L)
 
     for i in range(L):
@@ -43,19 +44,19 @@ def _precompute_f_and_G(basis_params, basis_type, M):
             b = basis_params[i, 1]
             bb = max(b, 1e-6)
             inv2b2 = 1.0/(2.0*bb*bb)
-            for j in prange(M):
+            for j in prange(default_M):
                 x = x_table[j] - np.pi
                 f_lut[i, j] = x * np.exp(-(x*x) * inv2b2)
             mean_vals[i] = 0.0  # odd over symmetric interval
         elif basis_type == 'gamma':
             alpha, scale = basis_params[i, 1], basis_params[i, 2]
-            for j in prange(M):
+            for j in prange(default_M):
                 f_lut[i, j] = gamma_pdf(x_table[j], alpha, scale)
             mean_vals[i] = np.trapezoid(f_lut[i], x_table) / (2.0*np.pi)
         elif basis_type == 'skewed-gaussian':
             b, skew = basis_params[i, 1], basis_params[i, 2]
             bb = max(b, 1e-6)
-            for j in prange(M):
+            for j in prange(default_M):
                 x = x_table[j] - np.pi
                 f_lut[i, j] = 2.0 * x * norm_pdf(x, bb) * norm_cdf(skew * x / bb)
             mean_vals[i] = np.trapezoid(f_lut[i], x_table) / (2.0*np.pi)
@@ -71,13 +72,13 @@ def _precompute_f_and_G(basis_params, basis_type, M):
     for i in prange(L):
         acc = 0.0
         G_lut[i, 0] = 0.0
-        for j in range(1, M):
+        for j in range(1, default_M):
             dx = x_table[j] - x_table[j-1]
             acc += 0.5*(f_lut[i, j-1] + f_lut[i, j]) * dx
             G_lut[i, j] = acc
         # remove tiny residual slope to enforce periodicity
         slope = G_lut[i, -1] / (2.0*np.pi)
-        for j in prange(M):
+        for j in prange(default_M):
             G_lut[i, j] -= slope * x_table[j]
 
     return x_table, G_lut
