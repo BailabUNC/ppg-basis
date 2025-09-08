@@ -1,7 +1,7 @@
-from model_basis import unified_model_basis
-from model_template import unified_model_template
-from model_fft import unified_model_fft
-from model_ode import unified_model_ode
+from .model_basis import unified_model_basis
+from .model_template import unified_model_template
+from .model_fft import unified_model_fft
+from .model_ode import unified_model_ode
 from ppg_constants import default_solver
 
 def unified_model(ppinterval, fs, seconds, basis_type, thetai, basis_params, solver = default_solver):

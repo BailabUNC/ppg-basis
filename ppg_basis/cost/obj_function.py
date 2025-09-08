@@ -5,7 +5,7 @@ def objective_function(model, signal, cost_metrics: list, func = None):
     Returns objective function by combining cost metrics
     :param model: reference signal
     :param signal: reconstructed signal
-    :param cost_metrics: list of metrics to ccombine
+    :param cost_metrics: list of metrics to combine
     :param func: optional cost function
     :return: objective function
     """

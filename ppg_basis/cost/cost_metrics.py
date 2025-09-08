@@ -34,9 +34,111 @@ def appg(model, signal):
     d2mod = gradient_1d(dmod, 1 / 125)
     return 1 - np.sqrt(np.sum((d2mod - d2sig) ** 2) / np.sum((d2sig - np.mean(d2sig)) ** 2))
 
+@njit
+def rank_array(arr):
+    """
+    Rank input array
+    :param arr: array
+    """
+    n = len(arr)
+    ranks = np.empty(n, dtype=np.float64)
+    sorted_idx = np.argsort(arr)
+    ranks[sorted_idx[0]] = 0
+    for i in range(1,n):
+        if arr[sorted_idx[i]] == arr[sorted_idx[i-1]]:
+            ranks[sorted_idx[i]] = ranks[sorted_idx[i-1]]
+        else:
+            ranks[sorted_idx[i]] = i
+    return ranks
+
+@njit
+def spearman(model, signal):
+    """
+        Generate Spearman Correlation Coefficient
+        :param model: reference signal
+        :param signal: reconstructed signal
+        :return: Spearman Correlation
+        """
+    model_rank = rank_array(model)
+    signal_rank = rank_array(signal)
+    d = model_rank - signal_rank
+    return np.sum(d ** 2)  # lower is better
+
+@njit
+def kendall(model, signal):
+    """
+        Generate Kendall Rank Correlation Coefficient
+        :param model: reference signal
+        :param signal: reconstructed signal
+        :return: Kendall's Tau Coefficient
+        """
+    n = len(model)
+    concordant = 0
+    discordant = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            m_diff = model[i] - model[j]
+            s_diff = signal[i] - signal[j]
+            if m_diff * s_diff > 0:
+                concordant += 1
+            elif m_diff * s_diff < 0:
+                discordant += 1
+    return discordant / (concordant + discordant + 1e-8)  # minimize discordance
+
+@njit
+def gamma(model, signal):
+    """
+        Generate Goodman & Kruskal's Gamma
+        :param model: reference signal
+        :param signal: reconstructed signal
+        :return: Gamma Coefficient
+        """
+    n = len(model)
+    concordant = 0
+    discordant = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            m_diff = model[i] - model[j]
+            s_diff = signal[i] - signal[j]
+            if m_diff != 0 and s_diff != 0:
+                if m_diff * s_diff > 0:
+                    concordant += 1
+                elif m_diff * s_diff < 0:
+                    discordant += 1
+    return discordant / (concordant + discordant + 1e-8)  # minimize bad ranking
+
+@njit
+def somers_d(model, signal):
+    """
+        Generate Somers' D Statistic
+        :param model: reference signal
+        :param signal: reconstructed signal
+        :return: Somers' Statistic
+        """
+    n = len(model)
+    concordant = 0
+    discordant = 0
+    ties_y = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            m_diff = model[i] - model[j]
+            s_diff = signal[i] - signal[j]
+            if s_diff == 0:
+                ties_y += 1
+            elif m_diff * s_diff > 0:
+                concordant += 1
+            elif m_diff * s_diff < 0:
+                discordant += 1
+    return (discordant + ties_y) / (concordant + discordant + ties_y + 1e-8)
+
+
 # mapping dictionary
 terms = {
     "mse" :  mse,
     "corr" : corr,
     "appg" : appg,
+    "spearman": spearman,
+    "kendall": kendall,
+    "gamma": gamma,
+    "somers": somers_d
 }
