@@ -159,26 +159,21 @@ def normalize_costs_only(config: dict | None = None):
         @functools.wraps(f)
         def _wrapped(model, signal, cost_metrics: list, *args, **kwargs):
             n = len(model)
-            # Build a normalized view of the global `terms`.
             normalized_terms = {}
             for name, fn in terms.items():
                 normalizer = NORMALIZERS.get(name, _identity_bounded)
 
                 def _make_wrapped(name=name, fn=fn, normalizer=normalizer):
-                    # wrap each metric function to return a normalized cost in [0,1]
                     def _wrapped_metric(m, s):
                         raw = fn(m, s)
-                        # some normalizers need n/config
                         try:
                             return normalizer(raw, n, config, model=m, signal=s)
                         except TypeError:
-                            # normalizer only needs the raw value
                             return normalizer(raw)
                     return _wrapped_metric
 
                 normalized_terms[name] = _make_wrapped()
 
-            # Swap `terms` → call original function → restore `terms`
             with _swap_terms(normalized_terms):
                 return f(model, signal, cost_metrics, *args, **kwargs)
 

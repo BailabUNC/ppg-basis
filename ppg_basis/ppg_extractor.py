@@ -16,6 +16,7 @@ class ppgExtractor:
                  basis_type: str,
                  solver: str,
                  cost_metrics: list,
+                 cost_weights: list=None,
                  cost_func: callable=None):
         """
         Constructor for Extractor Class
@@ -40,6 +41,7 @@ class ppgExtractor:
 
         # cost‐function flags
         self.cost_metrics = validate_param("cost_metrics", cost_metrics)
+        self.cost_weights = validate_param("cost-weights", cost_weights)
         self.cost_func = validate_param("cost_func", cost_func)
 
         # build RR‐interval & initial basis
@@ -78,9 +80,10 @@ class ppgExtractor:
 
         # scalar cost
         return objective_function(model=model_ppg,
-                                 signal=self.signal,
-                                 cost_metrics=self.cost_metrics,
-                                 func=self.cost_func)
+                                  signal=self.signal,
+                                  cost_metrics=self.cost_metrics,
+                                  cost_weights=self.cost_weights,
+                                  func=self.cost_func)
 
     def extract_ppg(self, block_update: bool = True, coord_cycles: int = 4):
         """
