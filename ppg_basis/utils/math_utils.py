@@ -202,3 +202,20 @@ def _interp_uniform_table(theta, z_grid):
     j, frac = _theta_to_index(theta, M)
     j2 = (j + 1) % M
     return (1.0 - frac) * z_grid[j] + frac * z_grid[j2]
+
+@njit
+def rank_array(arr):
+    """
+    Rank input array
+    :param arr: array
+    """
+    n = len(arr)
+    ranks = np.empty(n, dtype=np.float64)
+    sorted_idx = np.argsort(arr)
+    ranks[sorted_idx[0]] = 0
+    for i in range(1,n):
+        if arr[sorted_idx[i]] == arr[sorted_idx[i-1]]:
+            ranks[sorted_idx[i]] = ranks[sorted_idx[i-1]]
+        else:
+            ranks[sorted_idx[i]] = i
+    return ranks

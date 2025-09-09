@@ -35,23 +35,6 @@ def appg(model, signal):
     return 1 - np.sqrt(np.sum((d2mod - d2sig) ** 2) / np.sum((d2sig - np.mean(d2sig)) ** 2))
 
 @njit
-def rank_array(arr):
-    """
-    Rank input array
-    :param arr: array
-    """
-    n = len(arr)
-    ranks = np.empty(n, dtype=np.float64)
-    sorted_idx = np.argsort(arr)
-    ranks[sorted_idx[0]] = 0
-    for i in range(1,n):
-        if arr[sorted_idx[i]] == arr[sorted_idx[i-1]]:
-            ranks[sorted_idx[i]] = ranks[sorted_idx[i-1]]
-        else:
-            ranks[sorted_idx[i]] = i
-    return ranks
-
-@njit
 def spearman(model, signal):
     """
         Generate Spearman Correlation Coefficient
