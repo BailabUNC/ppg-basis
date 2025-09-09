@@ -40,10 +40,7 @@ class ppgExtractor:
 
         # cost‐function flags
         self.cost_metrics = validate_param("cost_metrics", cost_metrics)
-        if cost_func is None:
-            self.cost_func = None
-        else:
-            self.cost_func = validate_param("cost_func", cost_func)
+        self.cost_func = validate_param("cost_func", cost_func)
 
         # build RR‐interval & initial basis
         self.rr_interval = len(signal) / self.fs
