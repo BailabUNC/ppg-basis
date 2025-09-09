@@ -1,5 +1,7 @@
 import numpy as np
 from ppg_basis.utils.math_utils import *
+import functools
+from contextlib import contextmanager
 
 def mse(model, signal):
     """
@@ -32,7 +34,7 @@ def appg(model, signal):
     mod_smooth = gaussian_filter1d_numba(model, sigma=2)
     dmod = gradient_1d(mod_smooth, 1 / 125)
     d2mod = gradient_1d(dmod, 1 / 125)
-    return 1 - np.sqrt(np.sum((d2mod - d2sig) ** 2) / np.sum((d2sig - np.mean(d2sig)) ** 2))
+    return np.sqrt(np.sum((d2mod - d2sig) ** 2) / np.sum((d2sig - np.mean(d2sig)) ** 2))
 
 @njit
 def spearman(model, signal):
@@ -114,8 +116,75 @@ def somers_d(model, signal):
                 discordant += 1
     return (discordant + ties_y) / (concordant + discordant + ties_y + 1e-8)
 
+def _identity_bounded(x, *_args, **_kw):
+    return float(np.clip(x, 0.0, 1.0))
 
-# mapping dictionary
+def _corr_normalizer(x, *_args, **_kw):
+    return float(np.clip(x / 2.0, 0.0, 1.0))
+
+def _appg_normalizer(x, _n, cfg):
+    appg_cfg = (cfg or {}).get("appg", {})
+    max_nrmse = appg_cfg.get("max_nrmse", None)
+    if max_nrmse is not None and max_nrmse > 0:
+        return float(np.clip(x / max_nrmse, 0.0, 1.0))
+    k = appg_cfg.get("logistic_k", 1.0)
+    return float(1.0 / (1.0 + np.exp(-k * x)))
+
+def _spearman_normalizer(x, n, *_args, **_kw):
+    max_s = n * (n**2 - 1) / 3.0 if n >= 2 else 1.0
+    return float(np.clip(x / max_s, 0.0, 1.0))
+
+@contextmanager
+def _swap_terms(temp_terms):
+    global terms
+    _old = terms
+    terms = temp_terms
+    try:
+        yield
+    finally:
+        terms = _old
+
+def normalize_costs_only(config: dict | None = None):
+    """
+    Decorator factory that normalizes metrics to [0,1] (0=best, 1=worst)
+    config:
+      {
+        "appg": {
+          "max_nrmse": float | None,  # linear cap for NRMSE → [0,1] (recommended)
+          "logistic_k": float         # steepness if no cap; default 1.0
+        }
+      }
+    """
+    def _decorator(f):
+        @functools.wraps(f)
+        def _wrapped(model, signal, cost_metrics: list, *args, **kwargs):
+            n = len(model)
+            # Build a normalized view of the global `terms`.
+            normalized_terms = {}
+            for name, fn in terms.items():
+                normalizer = NORMALIZERS.get(name, _identity_bounded)
+
+                def _make_wrapped(name=name, fn=fn, normalizer=normalizer):
+                    # wrap each metric function to return a normalized cost in [0,1]
+                    def _wrapped_metric(m, s):
+                        raw = fn(m, s)
+                        # some normalizers need n/config
+                        try:
+                            return normalizer(raw, n, config, model=m, signal=s)
+                        except TypeError:
+                            # normalizer only needs the raw value
+                            return normalizer(raw)
+                    return _wrapped_metric
+
+                normalized_terms[name] = _make_wrapped()
+
+            # Swap `terms` → call original function → restore `terms`
+            with _swap_terms(normalized_terms):
+                return f(model, signal, cost_metrics, *args, **kwargs)
+
+        return _wrapped
+    return _decorator
+
 terms = {
     "mse" :  mse,
     "corr" : corr,
@@ -124,4 +193,14 @@ terms = {
     "kendall": kendall,
     "gamma": gamma,
     "somers": somers_d
+}
+
+NORMALIZERS = {
+    "mse": _identity_bounded,
+    "corr": _corr_normalizer,
+    "appg": _appg_normalizer,
+    "spearman": _spearman_normalizer,
+    "kendall": _identity_bounded,
+    "gamma": _identity_bounded,
+    "somers": _identity_bounded,
 }

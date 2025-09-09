@@ -1,5 +1,6 @@
-from .cost_metrics import terms
+from .cost_metrics import terms, normalize_costs_only
 
+@normalize_costs_only(config={"appg": {"max_nrmse": 5.0}})
 def objective_function(model, signal, cost_metrics: list, func = None):
     """
     Returns objective function by combining cost metrics
