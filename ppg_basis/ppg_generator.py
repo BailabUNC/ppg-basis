@@ -34,8 +34,11 @@ class ppgGenerator():
         self.L = validate_param("L", L)
         self.basis_type = validate_param("basis_type", basis_type)
         self.solver = validate_param("solver", solver)
-        
-        self.thetai, self.params = thetas, params if thetas and params is not None else generate_basis_parameters(L = self.L, basis_type = self.basis_type)
+
+        if thetas is not None and params is not None:
+            self.thetai, self.params = thetas, params
+        else:
+            self.thetai, self.params = generate_basis_parameters(L = self.L, basis_type = self.basis_type)
 
         self.ppinterval = pp_interval_generator(time=self.duration,
                                                 mu=self.mu,
@@ -47,11 +50,11 @@ class ppgGenerator():
         Generates PPG signal
         :return: z(t)
         """
-        self.signal = unified_solver(ppinterval=self.ppinterval,
-                                        fs=self.fs,
-                                        seconds=self.duration,
-                                        basis_type=self.basis_type,
-                                        thetai=self.thetai,
-                                        basis_params=self.params,
-                                        solver=self.solver)
+        self.signal = unified_solver.unified_model(ppinterval=self.ppinterval,
+                                                   fs=self.fs,
+                                                   seconds=self.duration,
+                                                   basis_type=self.basis_type,
+                                                   thetai=self.thetai,
+                                                   basis_params=self.params,
+                                                   solver=self.solver)
         return self.signal

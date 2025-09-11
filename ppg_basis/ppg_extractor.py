@@ -16,7 +16,8 @@ class ppgExtractor:
                  basis_type: str,
                  solver: str,
                  cost_metrics: list,
-                 cost_func: callable):
+                 cost_weights: list=None,
+                 cost_func: callable=None):
         """
         Constructor for Extractor Class
         :param signal: Input signal to analyze
@@ -29,7 +30,7 @@ class ppgExtractor:
         :param cost_metrics: cost metrics to be added to objective func
         :param cost_func: cost function to be added to objective func
         """
-        if signal is None or len(signal) > 3:
+        if signal is None or len(np.shape(signal)) > 3:
             raise ValueError("signal dim cannot exceed 3")
         self.signal = signal
 
@@ -40,6 +41,7 @@ class ppgExtractor:
 
         # cost‐function flags
         self.cost_metrics = validate_param("cost_metrics", cost_metrics)
+        self.cost_weights = validate_param("cost-weights", cost_weights)
         self.cost_func = validate_param("cost_func", cost_func)
 
         # build RR‐interval & initial basis
@@ -78,9 +80,10 @@ class ppgExtractor:
 
         # scalar cost
         return objective_function(model=model_ppg,
-                                 signal=self.signal,
-                                 cost_metrics=self.cost_metrics,
-                                 func=self.cost_func)
+                                  signal=self.signal,
+                                  cost_metrics=self.cost_metrics,
+                                  cost_weights=self.cost_weights,
+                                  func=self.cost_func)
 
     def extract_ppg(self, block_update: bool = True, coord_cycles: int = 4):
         """
