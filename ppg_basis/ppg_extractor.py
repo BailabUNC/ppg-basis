@@ -5,6 +5,7 @@ from ppg_basis.utils.ppg_utils import *
 from ppg_basis.cost import objective_function
 import fastplotlib as fpl
 from ipywidgets import IntSlider, Checkbox, VBox, HTML
+from ppg_constants import default_M
 
 class ppgExtractor:
     def __init__(self,
@@ -59,7 +60,7 @@ class ppgExtractor:
         self.bounds, self.constraints = get_bounds_and_constraints(L = self.L,
                                                                    basis_type = self.basis_type)
 
-    def get_cost(self, x: np.ndarray) -> float:
+    def get_cost(self, x: np.ndarray, M: int) -> float:
         """
         x is a flat array of length = L * (#params per basis).
         We reshape it, run the forward model, and compute the scalar cost.
@@ -70,13 +71,16 @@ class ppgExtractor:
         params_new = x[self.L:].reshape((self.L, P))
 
         # simulate
+        if not isinstance(M, int):
+            M = default_M
         model_ppg = unified_model(ppinterval=self.pp_interval,
                                       fs=self.fs,
                                       seconds=self.rr_interval,
                                       basis_type=self.basis_type,
                                       thetai=theta_new,
                                       basis_params=params_new,
-                                      solver=self.solver)
+                                      solver=self.solver,
+                                      M=M)
 
         # scalar cost
         return objective_function(model=model_ppg,
@@ -158,7 +162,8 @@ class ppgExtractor:
 
     def _generate_cost_landscape(self,
                                  basis_index: int,
-                                 resolution: int):
+                                 resolution: int,
+                                 M: int):
         """
         Generate full cost grid for a single basis.
         Returns X, Y, Z, C, S arrays.
@@ -191,13 +196,16 @@ class ppgExtractor:
                                 vec.append(p4 if p4 is not None else defaults[3])
                             params[basis_index] = vec
 
+                            if not isinstance(M, int):
+                                M = default_M
                             model_ppg = unified_model(ppinterval=self.pp_interval,
                                                       fs=self.fs,
                                                       seconds=self.rr_interval,
                                                       basis_type=self.basis_type,
                                                       thetai=thetai,
                                                       basis_params=params,
-                                                      solver=self.solver)
+                                                      solver=self.solver,
+                                                      M=M)
                             cost_val = objective_function(model_ppg, self.signal,
                                                           cost_metrics = self.cost_metrics)
 
