@@ -16,7 +16,7 @@ def unified_model(ppinterval, fs, seconds, basis_type, thetai, basis_params, sol
         return unified_model_template(ppinterval, fs, seconds, basis_type, thetai, basis_params)
     elif solver == "fft":
         return unified_model_fft(ppinterval, fs, seconds, basis_type, thetai, basis_params)
-    elif solver == "ode":
+    elif solver == "rk3" or solver == "rk4":
         return unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params, solver)
     else:
         raise ValueError(f"Unsupported solver: {solver}")

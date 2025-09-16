@@ -40,9 +40,12 @@ def unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params,
     if ode_solver == "rk3":
         traj = rk3_integration(y0, tspan, rr, fs, thetai, np.array(basis_params),
                                basis_type, mean_vals, x_table, lut_vals)
-    else:
+    elif ode_solver == "rk4":
         traj = rk4_integration(y0, tspan, rr, fs, thetai, np.array(basis_params),
                            basis_type, mean_vals, x_table, lut_vals)
+    else:
+        raise ValueError("Unsupported RK method")
+
     z = traj[:, 2]
     z = np.nan_to_num(z, nan=0.0, posinf=0.0, neginf=0.0)
     z = detrend(z)
