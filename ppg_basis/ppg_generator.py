@@ -1,5 +1,6 @@
 from ppg_basis.model import unified_solver
 from ppg_basis.utils.ppg_utils import pp_interval_generator, generate_basis_parameters, validate_param
+from ppg_constants import default_M
 
 class ppgGenerator():
     def __init__(self,
@@ -45,16 +46,19 @@ class ppgGenerator():
                                                 sigma=self.sigma)
         self.signal = None
 
-    def generate_signal(self):
+    def generate_signal(self, M):
         """
         Generates PPG signal
         :return: z(t)
         """
+        if not isinstance(M, int):
+            M = default_M
         self.signal = unified_solver.unified_model(ppinterval=self.ppinterval,
                                                    fs=self.fs,
                                                    seconds=self.duration,
                                                    basis_type=self.basis_type,
                                                    thetai=self.thetai,
                                                    basis_params=self.params,
-                                                   solver=self.solver)
+                                                   solver=self.solver,
+                                                   M=M)
         return self.signal

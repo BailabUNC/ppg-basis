@@ -39,7 +39,7 @@ param_validators = {
     "basis_type" : lambda x: x in basis_types,
     "L" : lambda x : isinstance(x, int) and x > 1,
     "mu" : lambda x: x > 0,
-    "sigma" : lambda x : x > 0,
+    "sigma" : lambda x : x >= 0,
     "solver" : lambda x : isinstance(x, str),
 
     # extractor-specific parameters

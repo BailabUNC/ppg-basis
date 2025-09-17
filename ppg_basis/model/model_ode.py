@@ -2,9 +2,8 @@ import numpy as np
 from scipy.signal import detrend
 from ppg_basis.utils.math_utils import gamma_pdf, norm_pdf, norm_cdf, interp1d_lut
 from numba import njit
-from ppg_constants import default_M
 
-def unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params, ode_solver):
+def unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params, ode_solver, M):
     """
     Extract z(t) given input parameters and target basis function
     :param ppinterval: peak-to-peak array
@@ -33,9 +32,9 @@ def unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params,
 
     y0 = np.array([-1.0, 0.0, 0.0])
 
-    x_table = np.linspace(0, 2 * np.pi, default_M)
+    x_table = np.linspace(0, 2 * np.pi, M)
     mean_vals, lut_vals = precompute_mean_basis_values(np.array(basis_params),
-                                                       basis_type, x_table)
+                                                       basis_type, x_table, M)
 
     if ode_solver == "rk3":
         traj = rk3_integration(y0, tspan, rr, fs, thetai, np.array(basis_params),
@@ -54,7 +53,7 @@ def unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params,
     return z
 
 @njit(cache=True)
-def precompute_mean_basis_values(basis_params, basis_type, x_table):
+def precompute_mean_basis_values(basis_params, basis_type, x_table, M):
     """
     Compute mean of each basis and look up table vals
     :param basis_params: basis functions (one set of parameters per row)
@@ -66,16 +65,16 @@ def precompute_mean_basis_values(basis_params, basis_type, x_table):
     """
     L = basis_params.shape[0]
     mean_vals = np.zeros(L)
-    lut_vals = np.zeros((L,default_M))
+    lut_vals = np.zeros((L,M))
     for i in range(L):
         if basis_type == 'gamma':
             alpha, scale = basis_params[i, 1], basis_params[i, 2]
-            for j in range(default_M):
+            for j in range(M):
                 lut_vals[i,j] = gamma_pdf(x_table[j], alpha, scale)
             mean_vals[i] = np.trapezoid(lut_vals[i], x_table)/(2*np.pi)
         elif basis_type == 'skewed-gaussian':
             b, skew = basis_params[i, 1], basis_params[i, 2]
-            for j in range(default_M):
+            for j in range(M):
                 x = x_table[j] - np.pi
                 lut_vals[i,j] = 2 * x * norm_pdf(x, b) * norm_cdf(skew * x / b)
             mean_vals[i] = np.trapezoid(lut_vals[i], x_table)/(2*np.pi)
