@@ -6,6 +6,9 @@ from ppg_basis.cost import objective_function
 import fastplotlib as fpl
 from ipywidgets import IntSlider, Checkbox, VBox, HTML
 from ppg_constants import default_M
+import itertools
+from concurrent.futures import ProcessPoolExecutor
+import os
 
 class ppgExtractor:
     def __init__(self,
@@ -160,72 +163,129 @@ class ppgExtractor:
             params_phase2 = res.x[self.L:].reshape((self.L, P))
         return theta_phase2, params_phase2
 
-    def _generate_cost_landscape(self,
-                                 basis_index: int,
-                                 resolution: int,
-                                 M: int):
+    def _eval_point_worker(self, payload):
         """
-        Generate full cost grid for a single basis.
-        Returns X, Y, Z, C, S arrays.
+        payload: (theta, p1, p2, p3, p4, cfg)
+        cfg is a dict with everything needed to build model and compute cost.
+        """
+        theta, p1, p2, p3, p4, cfg = payload
+
+        # Unpack config (simple types / arrays only)
+        basis_index = cfg["basis_index"]
+        P = cfg["P"]
+        defaults = cfg["defaults"]
+        pp_interval = cfg["pp_interval"]
+        fs = cfg["fs"]
+        rr_interval = cfg["rr_interval"]
+        basis_type = cfg["basis_type"]
+        solver = cfg["solver"]
+        M = cfg["M"]
+        signal = cfg["signal"]
+        cost_metrics = cfg["cost_metrics"]
+        thetai0 = cfg["thetai0"]
+        params0 = cfg["params0"]
+        unified_model = cfg["unified_model"]
+        objective_fn = cfg["objective_fn"]
+
+        # Local copies to avoid shared-state mutation
+        thetai = thetai0.copy()
+        params = params0.copy()
+
+        thetai[basis_index] = theta
+
+        vec = [p1, p2]
+        if P > 2:
+            vec.append(p3 if p3 is not None else defaults[2])
+        if P > 3:
+            vec.append(p4 if p4 is not None else defaults[3])
+        params[basis_index] = vec
+
+        # Build model and evaluate cost
+        model_ppg = unified_model(
+            ppinterval=pp_interval,
+            fs=fs,
+            seconds=rr_interval,
+            basis_type=basis_type,
+            thetai=thetai,
+            basis_params=params,
+            solver=solver,
+            M=M
+        )
+        cost_val = objective_fn(model_ppg, signal, cost_metrics=cost_metrics)
+
+        # S is the "extra" dimension (p3 or p4) or 0.0 if not present
+        if P > 3:
+            S = p4
+        elif P > 2:
+            S = p3
+        else:
+            S = 0.0
+
+        # Return in the same order as your original method
+        return (theta, p1, p2, cost_val, S)
+
+    def generate_cost_landscape_parallel(self, basis_index: int, resolution: int, M: int):
+        """
+        Parallel version of _generate_cost_landscape. Returns X, Y, Z, C, S arrays.
         """
         P = self.params.shape[1]
-        # bounds for theta_i and its P parameters
         theta_min, theta_max = self.bounds[basis_index]
-        p_bounds = self.bounds[
-            self.L + basis_index*P : self.L + (basis_index+1)*P
-        ]
+        p_bounds = self.bounds[self.L + basis_index * P: self.L + (basis_index + 1) * P]
 
         theta_vals = np.linspace(theta_min, theta_max, resolution)
         p_ranges = [np.linspace(b[0], b[1], resolution) for b in p_bounds]
         defaults = [np.mean(b) for b in p_bounds]
 
-        thetai = self.thetai.copy()
-        params = self.params.copy()
+        # Build full grid (fill missing with None so worker can handle defaults)
+        # Supports up to 4 params as in your code
+        p1_vals = p_ranges[0]
+        p2_vals = p_ranges[1]
+        p3_vals = (p_ranges[2] if P > 2 else [None])
+        p4_vals = (p_ranges[3] if P > 3 else [None])
 
-        X, Y, Z, C, S = [], [], [], [], []
-        for θ in theta_vals:
-            for p1 in p_ranges[0]:
-                for p2 in p_ranges[1]:
-                    for p3 in (p_ranges[2] if P>2 else [None]):
-                        for p4 in (p_ranges[3] if P>3 else [None]):
-                            thetai[basis_index] = θ
-                            vec = [p1, p2]
-                            if P>2:
-                                vec.append(p3 if p3 is not None else defaults[2])
-                            if P>3:
-                                vec.append(p4 if p4 is not None else defaults[3])
-                            params[basis_index] = vec
+        # Prepare a lightweight config dict for workers
+        cfg = {
+            "basis_index": basis_index,
+            "P": P,
+            "defaults": defaults,
+            "pp_interval": self.pp_interval,
+            "fs": self.fs,
+            "rr_interval": self.rr_interval,
+            "basis_type": self.basis_type,
+            "solver": self.solver,
+            "M": M if isinstance(M, int) else getattr(self, "default_M", 512),
+            "signal": self.signal,
+            "cost_metrics": self.cost_metrics,
+            "thetai0": self.thetai,
+            "params0": self.params,
+            # Pass callables (must be importable/top-level; if they are methods, pass references defined at module top)
+            "unified_model": unified_model,  # ensure this is top-level
+            "objective_fn": objective_function,  # ensure this is top-level
+        }
 
-                            if not isinstance(M, int):
-                                M = default_M
-                            model_ppg = unified_model(ppinterval=self.pp_interval,
-                                                      fs=self.fs,
-                                                      seconds=self.rr_interval,
-                                                      basis_type=self.basis_type,
-                                                      thetai=thetai,
-                                                      basis_params=params,
-                                                      solver=self.solver,
-                                                      M=M)
-                            cost_val = objective_function(model_ppg, self.signal,
-                                                          cost_metrics = self.cost_metrics)
-
-                            X.append(θ)
-                            Y.append(p1)
-                            Z.append(p2)
-                            C.append(cost_val)
-                            # record extra parameter for slicing
-                            if P>3:
-                                S.append(p4)
-                            elif P>2:
-                                S.append(p3)
-                            else:
-                                S.append(0.0)
-        return (
-            np.array(X), np.array(Y), np.array(Z),
-            np.array(C), np.array(S)
+        # Create payloads
+        payloads = (
+            (theta, p1, p2, p3, p4, cfg)
+            for theta, p1, p2, p3, p4
+            in itertools.product(theta_vals, p1_vals, p2_vals, p3_vals, p4_vals)
         )
 
-    def plot_cost_landscape(self, resolution: int = 10) -> list:
+        # Fan out to processes
+        results = []
+        max_workers = os.cpu_count() or 1
+        # On Windows, put this call under if __name__ == "__main__": guard in scripts
+        with ProcessPoolExecutor(max_workers=max_workers) as ex:
+            for out in ex.map(self._eval_point_worker, payloads, chunksize=64):
+                results.append(out)
+
+        # Unpack to arrays
+        if not results:
+            return (np.array([]),) * 5
+
+        X, Y, Z, C, S = map(np.array, zip(*results))
+        return X, Y, Z, C, S
+
+    def plot_cost_landscape(self, resolution: int = 10, M: int = 512) -> list:
         """
         Displays an interactive Fastplotlib viewer for each basis.
         Returns a list of ipywidget.VBox containers.
@@ -233,9 +293,10 @@ class ppgExtractor:
         containers = []
         for i in range(self.L):
             print(f"Basis {i+1}/{self.L}")
-            X, Y, Z, C_raw, S = self._generate_cost_landscape(
+            X, Y, Z, C_raw, S = self.generate_cost_landscape_parallel(
                 basis_index=i,
-                resolution=resolution
+                resolution=resolution,
+                M=M
             )
             # normalize cost to [0,1]
             C = (C_raw - C_raw.min()) / (C_raw.max() - C_raw.min())

@@ -8,8 +8,7 @@ install_requires = [
     'scipy',
     'fastplotlib',
     'ipywidgets',
-    'warnings',
-    'typing'
+    'typing',
 ]
 
 setup(
