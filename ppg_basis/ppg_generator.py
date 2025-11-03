@@ -46,7 +46,7 @@ class ppgGenerator():
                                                 sigma=self.sigma)
         self.signal = None
 
-    def generate_signal(self, M):
+    def generate_signal(self, M: int = 512):
         """
         Generates PPG signal
         :return: z(t)

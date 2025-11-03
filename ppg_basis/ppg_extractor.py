@@ -63,7 +63,7 @@ class ppgExtractor:
         self.bounds, self.constraints = get_bounds_and_constraints(L = self.L,
                                                                    basis_type = self.basis_type)
 
-    def get_cost(self, x: np.ndarray, M: int) -> float:
+    def get_cost(self, x: np.ndarray, M: int = 512) -> float:
         """
         x is a flat array of length = L * (#params per basis).
         We reshape it, run the forward model, and compute the scalar cost.
