@@ -13,7 +13,8 @@ class ppgGenerator():
                  basis_type,
                  solver: str = "rk3",
                  thetas=None,
-                 params=None):
+                 params=None,
+                 M: int=None):
         """
         Constructor for Generator Class
         :param fs: sampling rate (Hz)
@@ -26,6 +27,7 @@ class ppgGenerator():
         :param solver: method of ODE solving (generally an n-th order RK method)
         :param thetas: phase location in PPG period
         :param params: basis parameter list
+        :param M: LUT resolution for template/FFT solvers (default: 512)
         """
         self.fs = validate_param("fs", fs)
         self.hr = validate_param("hr", hr)
@@ -35,6 +37,7 @@ class ppgGenerator():
         self.L = validate_param("L", L)
         self.basis_type = validate_param("basis_type", basis_type)
         self.solver = validate_param("solver", solver)
+        self.M = validate_param("M", M) if M is not None else default_M
 
         if thetas is not None and params is not None:
             self.thetai, self.params = thetas, params
@@ -46,13 +49,16 @@ class ppgGenerator():
                                                 sigma=self.sigma)
         self.signal = None
 
-    def generate_signal(self, M: int = 512):
+    def generate_signal(self, M: int=None):
         """
         Generates PPG signal
         :return: z(t)
         """
-        if not isinstance(M, int):
-            M = default_M
+        if M is None:
+            M = self.M
+        elif not isinstance(M, int):
+            M = self.M
+
         self.signal = unified_solver.unified_model(ppinterval=self.ppinterval,
                                                    fs=self.fs,
                                                    seconds=self.duration,

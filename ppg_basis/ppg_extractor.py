@@ -21,7 +21,8 @@ class ppgExtractor:
                  solver: str,
                  cost_metrics: list,
                  cost_weights: list=None,
-                 cost_func: callable=None):
+                 cost_func: callable=None,
+                 M: int=None):
         """
         Constructor for Extractor Class
         :param signal: Input signal to analyze
@@ -33,6 +34,7 @@ class ppgExtractor:
         :param solver: method of ODE solving (generally an n-th order RK method)
         :param cost_metrics: cost metrics to be added to objective func
         :param cost_func: cost function to be added to objective func
+        :param M: LUT resolution for template/FFT solvers (default: 512)
         """
         if signal is None or len(np.shape(signal)) > 3:
             raise ValueError("signal dim cannot exceed 3")
@@ -42,10 +44,11 @@ class ppgExtractor:
         self.basis_type = validate_param("basis_type", basis_type)
         self.L = validate_param("L", L)
         self.solver = validate_param("solver", solver)
+        self.M = validate_param("M", M) if M is not None else default_M
 
         # cost‐function flags
         self.cost_metrics = validate_param("cost_metrics", cost_metrics)
-        self.cost_weights = validate_param("cost-weights", cost_weights)
+        self.cost_weights = validate_param("cost_weights", cost_weights)
         self.cost_func = validate_param("cost_func", cost_func)
 
         # build RR‐interval & initial basis
@@ -74,8 +77,6 @@ class ppgExtractor:
         params_new = x[self.L:].reshape((self.L, P))
 
         # simulate
-        if not isinstance(M, int):
-            M = default_M
         model_ppg = unified_model(ppinterval=self.pp_interval,
                                       fs=self.fs,
                                       seconds=self.rr_interval,
@@ -83,14 +84,15 @@ class ppgExtractor:
                                       thetai=theta_new,
                                       basis_params=params_new,
                                       solver=self.solver,
-                                      M=M)
+                                      M=self.M)
 
         # scalar cost
         return objective_function(model=model_ppg,
                                   signal=self.signal,
                                   cost_metrics=self.cost_metrics,
                                   cost_weights=self.cost_weights,
-                                  func=self.cost_func)
+                                  func=self.cost_func,
+                                  fs=self.fs)
 
     def extract_ppg(self, block_update: bool = True, coord_cycles: int = 4):
         """
