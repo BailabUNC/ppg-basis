@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.signal import detrend
 from ppg_basis.utils.solver_utils import _phase_from_rr, sample_template
-from ppg_basis.utils.math_utils import gamma_pdf, norm_pdf, norm_cdf
+import math
 
 def unified_model_fft(ppinterval, fs, seconds, basis_type, thetai, basis_params, M):
     n_samples = int(np.ceil(seconds * fs))
@@ -25,38 +25,53 @@ def build_phase_template_fft(basis_type, thetai, basis_params, M):
     return z_grid
 
 def _tabulate_zero_mean_derivative(basis_type, basis_params, M):
-    # returns g_grid on [0,2π): zero-mean derivative basis (unit amplitude)
+    """
+    Returns g_grid on [0,2π): zero-mean derivative basis (unit amplitude).
+    """
     phi = np.linspace(0.0, 2.0*np.pi, M, endpoint=False)
-    g = np.zeros(M, dtype=np.float64)
+    L = basis_params.shape[0]
 
     if basis_type == 'gaussian':
-        L = basis_params.shape[0]
+        # fully vectorized over M
+        x = phi - np.pi
         acc = np.zeros(M)
         for i in range(L):
-            b = max(basis_params[i,1], 1e-6)
-            x = ((phi - np.pi) )
-            acc += x * np.exp(-0.5*(x/b)**2)
-        g = acc / max(L,1)
+            b = max(basis_params[i, 1], 1e-6)
+            acc += x * np.exp(-0.5 * (x / b)**2)
+        g = acc / max(L, 1)
         g -= g.mean()
         return g
 
-    elif basis_type in ('gamma','skewed-gaussian'):
-        x_table = np.linspace(0.0, 2.0*np.pi, M, endpoint=False)
-        f_lut = np.zeros(M)
-        L = basis_params.shape[0]
+    elif basis_type == 'gamma':
+        g = np.zeros(M)
         for i in range(L):
-            if basis_type == 'gamma':
-                alpha, scale = basis_params[i,1], basis_params[i,2]
-                for j in range(M):
-                    f_lut[j] += gamma_pdf(x_table[j], alpha, scale)
-            else:
-                b, skew = basis_params[i,1], basis_params[i,2]
-                for j in range(M):
-                    x = x_table[j] - np.pi
-                    f_lut[j] += 2.0 * x * norm_pdf(x, b) * norm_cdf(skew * x / b)
-        g = f_lut / max(L,1)
+            alpha, scale = basis_params[i, 1], basis_params[i, 2]
+            # Only valid for phi > 0, which it is on (0, 2π)
+            valid = phi > 0
+            log_pdf = np.full(M, -np.inf)
+            log_pdf[valid] = ((alpha - 1.0) * np.log(phi[valid])
+                              - phi[valid] / scale
+                              - math.lgamma(alpha)
+                              - alpha * np.log(scale))
+            g += np.exp(log_pdf)
+        g /= max(L, 1)
         g -= g.mean()
         return g
+
+    elif basis_type == 'skewed-gaussian':
+        from scipy.special import erf as _erf
+        g = np.zeros(M)
+        x = phi - np.pi
+        for i in range(L):
+            b = max(basis_params[i, 1], 1e-6)
+            skew = basis_params[i, 2]
+            pdf_vals = np.exp(-0.5 * (x / b)**2) / (np.sqrt(2.0 * np.pi) * b)
+            cdf_vals = 0.5 * (1.0 + _erf(skew * x / (b * np.sqrt(2.0))))
+            g += 2.0 * x * pdf_vals * cdf_vals
+        g /= max(L, 1)
+        g -= g.mean()
+        return g
+
     else:
         raise ValueError("Unsupported basis type")
 

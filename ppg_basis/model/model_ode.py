@@ -1,7 +1,8 @@
 import numpy as np
 from scipy.signal import detrend
-from ppg_basis.utils.math_utils import gamma_pdf, norm_pdf, norm_cdf, interp1d_lut
+from ppg_basis.utils.math_utils import gamma_pdf_precomp, skewed_gaussian_val
 from numba import njit
+import math
 
 def unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params, ode_solver, M):
     """
@@ -55,29 +56,39 @@ def unified_model_ode(ppinterval, fs, seconds, basis_type, thetai, basis_params,
 @njit(cache=True)
 def precompute_mean_basis_values(basis_params, basis_type, x_table, M):
     """
-    Compute mean of each basis and look up table vals
-    :param basis_params: basis functions (one set of parameters per row)
-    :param basis_type: target basis
-    :param M: number of sampling points = len(x_table)
-    :param x_table: array of sampling points
-    :return mean_vals: mean of each basis function
-    :return lut_vals: look up table values (discretized basis function)
+    Compute mean of each basis and look up table vals.
     """
     L = basis_params.shape[0]
     mean_vals = np.zeros(L)
     lut_vals = np.zeros((L,M))
+    dx = x_table[1] - x_table[0]
+
     for i in range(L):
         if basis_type == 'gamma':
             alpha, scale = basis_params[i, 1], basis_params[i, 2]
+            alpha_m1 = alpha - 1.0
+            inv_scale = 1.0 / max(scale, 1e-10)
+            log_norm = math.lgamma(alpha) + alpha * math.log(max(scale, 1e-10))
             for j in range(M):
-                lut_vals[i,j] = gamma_pdf(x_table[j], alpha, scale)
-            mean_vals[i] = np.trapezoid(lut_vals[i], x_table)/(2*np.pi)
+                lut_vals[i,j] = gamma_pdf_precomp(x_table[j], alpha_m1, inv_scale, log_norm)
+            # uniform trapezoid
+            s = 0.5 * (lut_vals[i, 0] + lut_vals[i, M-1])
+            for j in range(1, M-1):
+                s += lut_vals[i, j]
+            mean_vals[i] = s * dx / (2.0 * np.pi)
+
         elif basis_type == 'skewed-gaussian':
             b, skew = basis_params[i, 1], basis_params[i, 2]
+            bb = max(b, 1e-6)
+            inv_b = 1.0 / bb
+            skew_over_b = skew * inv_b
             for j in range(M):
                 x = x_table[j] - np.pi
-                lut_vals[i,j] = 2 * x * norm_pdf(x, b) * norm_cdf(skew * x / b)
-            mean_vals[i] = np.trapezoid(lut_vals[i], x_table)/(2*np.pi)
+                lut_vals[i,j] = skewed_gaussian_val(x, inv_b, skew_over_b)
+            s = 0.5 * (lut_vals[i, 0] + lut_vals[i, M-1])
+            for j in range(1, M-1):
+                s += lut_vals[i, j]
+            mean_vals[i] = s * dx / (2.0 * np.pi)
     return mean_vals, lut_vals
 
 @njit(cache=True)
@@ -176,8 +187,18 @@ def generator_equations(t, point, rr, fs, thetai, basis_params, basis_type, mean
             f = a * diff_theta * np.exp(-(diff_theta ** 2) / (2 * b_sq))
         else:
             xval = diff_theta + np.pi
-            f = interp1d_lut(xval, x_table, lut_vals[i]) - mean_vals[i]
-            f *= basis_params[i, 0]
+            M = x_table.shape[0]
+            dx_table = x_table[1] - x_table[0]
+            if xval < 0.0:
+                xval = 0.0
+            elif xval > x_table[M - 1]:
+                xval = x_table[M - 1]
+            idx = int(xval / dx_table)
+            if idx >= M - 1:
+                idx = M - 2
+            frac = (xval - idx * dx_table) / dx_table
+            f_interp = (1.0 - frac) * lut_vals[i, idx] + frac * lut_vals[i, idx + 1]
+            f = (f_interp - mean_vals[i]) * basis_params[i, 0]
         dzdt -= f * w
 
     return np.array([dxdt, dydt, dzdt])

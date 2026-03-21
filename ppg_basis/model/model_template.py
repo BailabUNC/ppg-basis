@@ -32,12 +32,19 @@ def _build_phase_template_gaussian(thetai, basis_params, M):
     return z_grid
 
 def _build_phase_template_generic(basis_type, thetai, basis_params, M):
+    """
+    Compute shifted primitive via Fourier shift.
+    """
     _, G_lut = _precompute_f_and_G(np.ascontiguousarray(basis_params), basis_type, M)
     z_grid = np.zeros(M, dtype=np.float64)
+    k = np.fft.fftfreq(M, d=1.0 / M)
+
     for i in range(thetai.size):
         a = basis_params[i, 0]
-        # map θ_i to a circular shift
-        shift = int(np.round((thetai[i] + np.pi) * M / (2.0*np.pi))) % M
-        # roll primitive and scale
-        z_grid -= a * np.roll(G_lut[i], shift)
+        # fractional shift in grid points (continuous, not rounded)
+        d = (thetai[i] + np.pi) * M / (2.0 * np.pi)
+        # Fourier shift: exact circular shift
+        G_fft = np.fft.fft(G_lut[i])
+        G_shifted = np.fft.ifft(G_fft * np.exp(-1j * 2.0 * np.pi * k * d / M)).real
+        z_grid -= a * G_shifted
     return z_grid

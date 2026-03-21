@@ -3,6 +3,9 @@ from numba import njit, prange
 import math
 
 
+_INV_SQRT_2PI = 1.0 / math.sqrt(2.0 * math.pi)  # ≈ 0.3989422804
+_INV_SQRT_2   = 1.0 / math.sqrt(2.0)             # ≈ 0.7071067812
+
 @njit(cache=True)
 def _wrap_pi(x):
     return ((x + np.pi) % (2 * np.pi)) - np.pi
@@ -23,12 +26,19 @@ def corrcoef_numba(x, y):
     :param y: vector 2
     :return: r
     """
-    x_mean = np.mean(x)
-    y_mean = np.mean(y)
-    cov = np.mean((x - x_mean) * (y - y_mean))
-    std_x = np.std(x)
-    std_y = np.std(y)
-    return cov / (std_x * std_y + 1e-8)
+    n = x.shape[0]
+    sx = 0.0; sy = 0.0
+    for i in range(n):
+        sx += x[i]; sy += y[i]
+    mx = sx / n; my = sy / n
+    cov = 0.0; vx = 0.0; vy = 0.0
+    for i in range(n):
+        dx = x[i] - mx
+        dy = y[i] - my
+        cov += dx * dy
+        vx += dx * dx
+        vy += dy * dy
+    return cov / (math.sqrt(vx * vy) + 1e-8)
 
 @njit(cache=True)
 def gaussian_kernel1d(sigma, radius=3):
@@ -75,14 +85,12 @@ def gradient_1d(arr, dx=1.0):
     """
     n = len(arr)
     grad = np.empty(n, dtype=arr.dtype)
-
-    # Central differences
+    inv_2dx = 1.0 / (2.0 * dx)
+    inv_dx  = 1.0 / dx
     for i in prange(1, n - 1):
-        grad[i] = (arr[i + 1] - arr[i - 1]) / (2 * dx)
-
-    # Forward/backward difference at boundaries
-    grad[0] = (arr[1] - arr[0]) / dx
-    grad[-1] = (arr[-1] - arr[-2]) / dx
+        grad[i] = (arr[i + 1] - arr[i - 1]) * inv_2dx
+    grad[0] = (arr[1] - arr[0]) * inv_dx
+    grad[-1] = (arr[-1] - arr[-2]) * inv_dx
     return grad
 
 @njit(cache=True)
@@ -102,6 +110,15 @@ def gamma_pdf(x, alpha, scale):
                     - alpha*math.log(scale))
 
 @njit(cache=True)
+def gamma_pdf_precomp(x, alpha_m1, inv_scale, log_norm):
+    """
+    Gamma PDF with precomputed constants (avoids lgamma+log per call)
+    """
+    if x <= 0.0:
+        return 0.0
+    return math.exp(alpha_m1 * math.log(x) - x * inv_scale - log_norm)
+
+@njit(cache=True)
 def norm_pdf(x, b):
     """
     Compute PDF of normal distribution at given point
@@ -109,7 +126,8 @@ def norm_pdf(x, b):
     :param b: standard deviation
     :return: Value of normal PDF at x
     """
-    return math.exp(-0.5*(x/b)**2) / (math.sqrt(2*math.pi) * b)
+    inv_b = 1.0 / b
+    return math.exp(-0.5 * (x * inv_b) ** 2) * inv_b * 0.3989422804014327
 
 @njit(cache=True)
 def norm_cdf(x):
@@ -118,7 +136,7 @@ def norm_cdf(x):
     :param x: x value to compute CDF at
     :return: Value of normal CDF at x
     """
-    return 0.5 * (1.0 + math.erf(x/math.sqrt(2.0)))
+    return 0.5 * (1.0 + math.erf(x * 0.7071067811865476))
 
 @njit(cache=True)
 def gamma_mean(alpha, scale, M):
@@ -130,11 +148,15 @@ def gamma_mean(alpha, scale, M):
     :return: approximated mean of gamma dist over 2pi
     """
     d0 = 2 * np.pi / M
+    alpha_m1 = alpha - 1.0
+    inv_scale = 1.0 / scale
+    log_norm = math.lgamma(alpha) + alpha * math.log(scale)
     mean_val = 0.0
     for j in range(M):
         j0 = (j + 0.5) * d0
-        mean_val += gamma_pdf(j0, alpha, scale)
+        mean_val += gamma_pdf_precomp(j0, alpha_m1, inv_scale, log_norm)
     return mean_val * d0 / (2 * np.pi)
+
 
 @njit(cache=True)
 def skewed_gaussian_mean(b, skew, M):
@@ -146,11 +168,24 @@ def skewed_gaussian_mean(b, skew, M):
     :return: approximated mean of skewed Gaussian distribution over -pi to pi
     """
     d0 = 2 * np.pi / M
+    inv_b = 1.0 / max(b, 1e-6)
+    skew_over_b = skew * inv_b
     mean_val = 0.0
     for j in range(M):
         j0 = -np.pi + (j + 0.5) * d0
-        mean_val += 2 * j0 * norm_pdf(j0, b) * norm_cdf(skew * j0 / b)
+        mean_val += skewed_gaussian_val(j0, inv_b, skew_over_b)
     return mean_val * d0 / (2 * np.pi)
+
+@njit(cache=True)
+def skewed_gaussian_val(x_centered, inv_b, skew_over_b):
+    """
+    Combined skewed-Gaussian derivative: 2·x·φ(x;b)·Φ(skew·x/b)
+    with precomputed inv_b and skew_over_b
+    """
+    u = x_centered * inv_b
+    pdf = math.exp(-0.5 * u * u) * inv_b * 0.3989422804014327
+    cdf = 0.5 * (1.0 + math.erf(skew_over_b * x_centered * 0.7071067811865476))
+    return 2.0 * x_centered * pdf * cdf
 
 @njit(cache=True)
 def interp1d_lut(x, x_table, y_table):
@@ -183,16 +218,16 @@ def _interp1d_lut_scalar(x, x_table, y_table):
     """
     M = x_table.shape[0]
     dx = x_table[1] - x_table[0]
-    # clamp x into [0, 2π]
+    inv_dx = 1.0 / dx
     if x < 0.0:
         x = 0.0
     elif x > 2.0*np.pi:
         x = 2.0*np.pi
-    idx = int(x / dx)
+    idx = int(x * inv_dx)
     if idx >= M-1:
         idx = M-2
     x0 = idx * dx
-    t = (x - x0) / dx
+    t = (x - x0) * inv_dx
     return (1.0 - t) * y_table[idx] + t * y_table[idx + 1]
 
 @njit(cache=True)
