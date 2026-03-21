@@ -21,20 +21,25 @@ def corr(model, signal):
     """
     return 1 - corrcoef_numba(model, signal)
 
-def appg(model, signal):
+def appg(model, signal, fs=125, **kwargs):
     """
     Generate NRMSE of 2nd derivative of PPG (aPPG)
     :param model: reference signal
     :param signal: reconstructed signal
+    :param fs: sampling rate (Hz)
     :return: NRMSE
     """
+    dt = 1.0 / fs
     sig_smooth = gaussian_filter1d_numba(signal, sigma=2)
-    dsig = gradient_1d(sig_smooth, 1 / 125)
-    d2sig = gradient_1d(dsig, 1 / 125)
+    dsig = gradient_1d(sig_smooth, dt)
+    d2sig = gradient_1d(dsig, dt)
     mod_smooth = gaussian_filter1d_numba(model, sigma=2)
-    dmod = gradient_1d(mod_smooth, 1 / 125)
-    d2mod = gradient_1d(dmod, 1 / 125)
-    return np.sqrt(np.sum((d2mod - d2sig) ** 2) / np.sum((d2sig - np.mean(d2sig)) ** 2))
+    dmod = gradient_1d(mod_smooth, dt)
+    d2mod = gradient_1d(dmod, dt)
+    denom = np.sum((d2sig - np.mean(d2sig)) ** 2)
+    if denom < 1e-12:
+        return 0.0
+    return np.sqrt(np.sum((d2mod - d2sig) ** 2) / denom)
 
 @njit
 def spearman(model, signal):
