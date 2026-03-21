@@ -3,7 +3,6 @@ from scipy.optimize import differential_evolution, minimize
 from ppg_basis.model.unified_solver import unified_model
 from ppg_basis.utils.ppg_utils import *
 from ppg_basis.cost import objective_function
-import fastplotlib as fpl
 from ipywidgets import IntSlider, Checkbox, VBox, HTML
 from ppg_constants import default_M
 import itertools
@@ -21,7 +20,8 @@ class ppgExtractor:
                  solver: str,
                  cost_metrics: list,
                  cost_weights: list=None,
-                 cost_func: callable=None):
+                 cost_func: callable=None,
+                 M: int=None):
         """
         Constructor for Extractor Class
         :param signal: Input signal to analyze
@@ -33,6 +33,7 @@ class ppgExtractor:
         :param solver: method of ODE solving (generally an n-th order RK method)
         :param cost_metrics: cost metrics to be added to objective func
         :param cost_func: cost function to be added to objective func
+        :param M: LUT resolution for template/FFT solvers (default: 512)
         """
         if signal is None or len(np.shape(signal)) > 3:
             raise ValueError("signal dim cannot exceed 3")
@@ -42,10 +43,11 @@ class ppgExtractor:
         self.basis_type = validate_param("basis_type", basis_type)
         self.L = validate_param("L", L)
         self.solver = validate_param("solver", solver)
+        self.M = validate_param("M", M) if M is not None else default_M
 
         # cost‐function flags
         self.cost_metrics = validate_param("cost_metrics", cost_metrics)
-        self.cost_weights = validate_param("cost-weights", cost_weights)
+        self.cost_weights = validate_param("cost_weights", cost_weights)
         self.cost_func = validate_param("cost_func", cost_func)
 
         # build RR‐interval & initial basis
@@ -74,8 +76,6 @@ class ppgExtractor:
         params_new = x[self.L:].reshape((self.L, P))
 
         # simulate
-        if not isinstance(M, int):
-            M = default_M
         model_ppg = unified_model(ppinterval=self.pp_interval,
                                       fs=self.fs,
                                       seconds=self.rr_interval,
@@ -83,14 +83,15 @@ class ppgExtractor:
                                       thetai=theta_new,
                                       basis_params=params_new,
                                       solver=self.solver,
-                                      M=M)
+                                      M=self.M)
 
         # scalar cost
         return objective_function(model=model_ppg,
                                   signal=self.signal,
                                   cost_metrics=self.cost_metrics,
                                   cost_weights=self.cost_weights,
-                                  func=self.cost_func)
+                                  func=self.cost_func,
+                                  fs=self.fs)
 
     def extract_ppg(self, block_update: bool = True, coord_cycles: int = 4):
         """
@@ -284,82 +285,3 @@ class ppgExtractor:
 
         X, Y, Z, C, S = map(np.array, zip(*results))
         return X, Y, Z, C, S
-
-    def plot_cost_landscape(self, resolution: int = 10, M: int = 512) -> list:
-        """
-        Displays an interactive Fastplotlib viewer for each basis.
-        Returns a list of ipywidget.VBox containers.
-        """
-        containers = []
-        for i in range(self.L):
-            print(f"Basis {i+1}/{self.L}")
-            X, Y, Z, C_raw, S = self.generate_cost_landscape_parallel(
-                basis_index=i,
-                resolution=resolution,
-                M=M
-            )
-            # normalize cost to [0,1]
-            C = (C_raw - C_raw.min()) / (C_raw.max() - C_raw.min())
-
-            coords = np.column_stack([X, Y, Z])
-            unique_S = sorted(set(S))
-            slice_masks = [(S==sv) for sv in unique_S]
-
-            # build figure
-            fig = fpl.Figure(shape=(1,1),
-                             cameras="3d",
-                             controller_types="orbit",
-                             size=(700,560))
-            mask0 = slice_masks[0]
-            scatter_ref = [
-                fig[0,0].add_scatter(
-                    coords[mask0],
-                    cmap='viridis',
-                    cmap_transform=C[mask0],
-                    sizes=10
-                )
-            ]
-            checkbox_auto = Checkbox(False, description="autoscale")
-            slider_idx = IntSlider(
-                value=0, min=0,
-                max=len(unique_S)-1,
-                step=1,
-                description="slice idx",
-                continuous_update=True
-            )
-            status = HTML()
-
-            def _update(change,
-                        fig=fig,
-                        coords=coords,
-                        C=C,
-                        masks=slice_masks,
-                        scatter_ref=scatter_ref,
-                        checkbox=checkbox_auto,
-                        status=status,
-                        basis=i,
-                        uniq_S=unique_S):
-                idx = change['new']
-                mask = masks[idx]
-                # remove + re‑add
-                fig[0,0].remove_graphic(scatter_ref[0])
-                scatter_ref[0] = fig[0,0].add_scatter(
-                    coords[mask],
-                    cmap='viridis',
-                    cmap_transform=C[mask],
-                    sizes=10
-                )
-                if checkbox.value:
-                    fig[0,0].auto_scale(maintain_aspect=False)
-                status.value = (
-                    f"Basis {basis+1}, slice {idx}, S={uniq_S[idx]:.3f}"
-                )
-
-            slider_idx.observe(_update, names=['value'])
-            # initial draw
-            _update({'new': 0})
-
-            containers.append(
-                VBox([fig.show(), slider_idx, checkbox_auto, status])
-            )
-        return containers
