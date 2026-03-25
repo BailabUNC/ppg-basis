@@ -1,7 +1,7 @@
 import warnings
 import numpy as np
 from scipy.optimize import LinearConstraint
-from ppg_constants import param_bnds_dict, param_validators, default_params
+from ppg_basis.ppg_constants import param_bnds_dict, param_validators, default_params
 
 def validate_param(name, value):
     validator = param_validators.get(name, lambda x: True)
