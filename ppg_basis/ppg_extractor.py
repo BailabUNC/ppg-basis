@@ -3,11 +3,20 @@ from scipy.optimize import differential_evolution, minimize
 from ppg_basis.model.unified_solver import unified_model
 from ppg_basis.utils.ppg_utils import *
 from ppg_basis.cost import objective_function
-from ipywidgets import IntSlider, Checkbox, VBox, HTML
-from ppg_constants import default_M
+from ppg_basis.ppg_constants import default_M
 import itertools
 from concurrent.futures import ProcessPoolExecutor
 import os
+
+try:
+    import fastppg as _fastppg
+
+    _HAS_FASTPPG = True
+except ImportError:
+    _fastppg = None
+    _HAS_FASTPPG = False
+
+import warnings
 
 class ppgExtractor:
     def __init__(self,
@@ -93,9 +102,9 @@ class ppgExtractor:
                                   func=self.cost_func,
                                   fs=self.fs)
 
-    def extract_ppg(self, block_update: bool = True, coord_cycles: int = 4):
+    def _extract_ppg_python(self, block_update: bool = True, coord_cycles: int = 4):
         """
-        Extract PPG params (theta and basis specific)
+        Extract PPG params (theta and basis specific) using Python/Numba pipeline.
         :param block_update: Flag for whether to run block update per basis in phase 2 optimization
         :param coord_cycles: If block update flag is True, dictates how many cycles per basis
         :return: thetas and params from phase 2 optimization
@@ -163,6 +172,42 @@ class ppgExtractor:
             theta_phase2 = res.x[:self.L]
             params_phase2 = res.x[self.L:].reshape((self.L, P))
         return theta_phase2, params_phase2
+
+
+    def extract_ppg(self, block_update: bool = True, coord_cycles: int = 4):
+        """
+        Extract PPG params (theta and basis specific)
+        :param block_update: Flag for whether to run block update per basis in phase 2 optimization
+        :param coord_cycles: If block update flag is True, dictates how many cycles per basis
+        :return: thetas and params from phase 2 optimization
+        """
+        if _HAS_FASTPPG:
+            try:
+                P = self.params.shape[1]
+                theta, params_flat, cost, nfev = _fastppg.extract_ppg_native(
+                    signal=self.signal,
+                    pp_interval=np.array(self.pp_interval, dtype=np.float64),
+                    fs=self.fs,
+                    basis_type=self.basis_type,
+                    solver=self.solver,
+                    L=self.L, M=self.M,
+                    cost_metrics=self.cost_metrics,
+                    cost_weights=self.cost_weights if self.cost_weights else [1.0] * len(self.cost_metrics),
+                    thetai_init=self.thetai,
+                    params_init=self.params,
+                    maxiter_de=60, popsize=12, tol_de=1e-2,
+                    maxiter_slsqp=1000, ftol_slsqp=1e-8,
+                    block_update=block_update, coord_cycles=coord_cycles,
+                    seed=42
+                )
+                return theta, params_flat
+            except Exception as e:
+                warnings.warn(
+                    f"fastppg.extract_ppg_native failed ({e}); falling back to Python solver.",
+                    RuntimeWarning
+                )
+
+        return self._extract_ppg_python(block_update=block_update, coord_cycles=coord_cycles)
 
     def _eval_point_worker(self, payload):
         """

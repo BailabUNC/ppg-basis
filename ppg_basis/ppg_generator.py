@@ -1,6 +1,6 @@
 from ppg_basis.model import unified_solver
 from ppg_basis.utils.ppg_utils import pp_interval_generator, generate_basis_parameters, validate_param
-from ppg_constants import default_M
+from ppg_basis.ppg_constants import default_M
 
 class ppgGenerator():
     def __init__(self,

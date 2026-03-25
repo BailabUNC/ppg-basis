@@ -1,0 +1,37 @@
+[build-system]
+requires = [
+    "setuptools>=68",
+    "wheel",
+    "pybind11>=2.13.0",
+    "numpy>=1.26"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ppg_basis"
+version = "0.1.0"
+description = "PPG basis decomposition with native C++ acceleration"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "scipy",
+    "pybind11",
+]
+
+[tool.setuptools.packages.find]
+include = ["ppg_basis*"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+ppg_basis = [
+    "native/fastppg/*.hpp",
+    "native/fastppg/*.h",
+    "native/fastppg/*.cpp",
+    "native/fastppg/*.c",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
