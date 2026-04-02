@@ -45,7 +45,7 @@ param_validators = {
     # extractor-specific parameters
     "cost_metrics" : lambda x : isinstance(x, list) and all(isinstance(metric, str) for metric in x),
     "cost_weights": lambda x : isinstance(x, list) and all(isinstance(weight, (int, float)) for weight in x),
-    "cost_func" : lambda x : callable(x),
+    "cost_func" : lambda x : (x is None) or callable(x),
 
     # generator-specific parameters
     "hr" : lambda x : isinstance(x, int) and x > 0,
